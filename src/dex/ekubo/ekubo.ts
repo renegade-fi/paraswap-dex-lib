@@ -462,28 +462,25 @@ export class Ekubo extends SimpleExchange implements IDex<EkuboData> {
     tokenB: Token,
     limitPools: string[] | undefined,
   ): IEkuboPool[] {
-    if (typeof limitPools === 'undefined') {
-      const [token0, token1] = convertAndSortTokens(tokenA, tokenB);
+    const [token0, token1] = convertAndSortTokens(tokenA, tokenB);
 
-      return Array.from(
-        this.pools
-          .values()
-          .filter(
-            pool => pool.key.token0 === token0 && pool.key.token1 === token1,
-          ),
-      );
-    }
+    const unfilteredPools =
+      typeof limitPools === 'undefined'
+        ? Array.from(this.pools.values())
+        : limitPools.flatMap(poolId => {
+            const pool = this.pools.get(poolId);
 
-    return limitPools.flatMap(poolId => {
-      const pool = this.pools.get(poolId);
+            if (typeof pool === 'undefined') {
+              this.logger.warn(`Pool ${poolId} requested but not found`);
+              return [];
+            }
 
-      if (typeof pool === 'undefined') {
-        this.logger.warn(`Pool ${poolId} requested but not found`);
-        return [];
-      }
+            return [pool];
+          });
 
-      return [pool];
-    });
+    return unfilteredPools.filter(
+      pool => pool.key.token0 === token0 && pool.key.token1 === token1,
+    );
   }
 
   private async updatePoolMap(blockNumber: number) {
