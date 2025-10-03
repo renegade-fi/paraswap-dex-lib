@@ -14,10 +14,15 @@ import { getDexKeysWithNetwork } from '../../utils';
 import { IDex } from '../idex';
 import { IDexHelper } from '../../dex-helper/idex-helper';
 import { SimpleExchange } from '../simple-exchange';
-import { RenegadeData, RenegadeLevelsResponse } from './types';
+import {
+  RenegadeData,
+  RenegadeLevelsResponse,
+  RenegadePairData,
+  RenegadePriceLevel,
+} from './types';
 import { RenegadeConfig } from './config';
 import { RateFetcher } from './rate-fetcher';
-import { USDC_ADDRESSES } from './constants';
+import { USDC_ADDRESSES, RENEGADE_GAS_COST } from './constants';
 
 export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   /** Indicates if this DEX requires active state polling for price updates. */
@@ -101,6 +106,503 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     return [srcAddress, destAddress].sort((a, b) => (a < b ? -1 : 1));
   }
 
+  // ========================================
+  // | RENEGADE-SPECIFIC VALIDATION HELPERS |
+  // ========================================
+
+  /**
+   * Checks if a token is USDC for the current network.
+   *
+   * Renegade-specific behavior:
+   * - Only supports USDC pairs (exactly one token must be USDC)
+   * - Uses network-specific USDC addresses from constants
+   * - Case-insensitive address comparison
+   *
+   * @param token - Token to check
+   * @returns true if token is USDC, false otherwise
+   */
+  private isTokenUSDC(token: Token): boolean {
+    const usdcAddress = USDC_ADDRESSES[this.network];
+    if (!usdcAddress) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .warn(
+          `${this.dexKey}: USDC address not configured for network ${this.network}`,
+        );
+      return false;
+    }
+
+    return token.address.toLowerCase() === usdcAddress.toLowerCase();
+  }
+
+  /**
+   * Validates that exactly one token is USDC (Renegade requirement).
+   *
+   * Renegade-specific behavior:
+   * - All pairs must have exactly one USDC token
+   * - Neither token can be USDC (invalid pair)
+   * - Both tokens cannot be USDC (invalid pair)
+   * - Uses XOR logic: exactly one must be true
+   *
+   * @param srcToken - Source token
+   * @param destToken - Destination token
+   * @returns true if exactly one token is USDC, false otherwise
+   */
+  private validateExactlyOneUSDC(srcToken: Token, destToken: Token): boolean {
+    const isSrcTokenUSDC = this.isTokenUSDC(srcToken);
+    const isDestTokenUSDC = this.isTokenUSDC(destToken);
+
+    // XOR: exactly one must be USDC
+    const exactlyOneUSDC = isSrcTokenUSDC !== isDestTokenUSDC;
+
+    if (!exactlyOneUSDC) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .debug(
+          `${this.dexKey}: Invalid USDC pair - srcToken: ${
+            srcToken.symbol || srcToken.address
+          } (USDC: ${isSrcTokenUSDC}), destToken: ${
+            destToken.symbol || destToken.address
+          } (USDC: ${isDestTokenUSDC})`,
+        );
+    }
+
+    return exactlyOneUSDC;
+  }
+
+  /**
+   * Validates if a token pair is valid for Renegade trading.
+   *
+   * Renegade-specific requirements:
+   * - Exactly one token must be USDC
+   * - Tokens cannot be the same
+   * - Both tokens must exist in the network
+   * - USDC address must be configured for the network
+   *
+   * @param srcToken - Source token
+   * @param destToken - Destination token
+   * @returns true if pair is valid for Renegade, false otherwise
+   */
+  private isValidRenegadePair(srcToken: Token, destToken: Token): boolean {
+    // Check if tokens are the same
+    if (srcToken.address.toLowerCase() === destToken.address.toLowerCase()) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .debug(`${this.dexKey}: Same token addresses - ${srcToken.address}`);
+      return false;
+    }
+
+    // Check if exactly one token is USDC
+    if (!this.validateExactlyOneUSDC(srcToken, destToken)) {
+      return false;
+    }
+
+    this.dexHelper
+      .getLogger(this.dexKey)
+      .debug(
+        `${this.dexKey}: Valid Renegade pair - ${
+          srcToken.symbol || srcToken.address
+        }/${destToken.symbol || destToken.address}`,
+      );
+
+    return true;
+  }
+
+  // ========================================
+  // | DATA PROCESSING HELPERS |
+  // ========================================
+
+  /**
+   * Finds pair data in Renegade levels response (bidirectional lookup).
+   *
+   * Renegade-specific behavior:
+   * - Checks both directions (src/dest and dest/src)
+   * - API might return pair in either direction
+   * - Returns first match found
+   * - Validates pair data structure (bids/asks arrays)
+   *
+   * @param levels - Levels response from Renegade API
+   * @param srcToken - Source token
+   * @param destToken - Destination token
+   * @returns Pair data if found, null otherwise
+   */
+  private findPairInLevels(
+    levels: RenegadeLevelsResponse,
+    srcToken: Token,
+    destToken: Token,
+  ): RenegadePairData | null {
+    // Try both directions for the pair
+    const pairId1 = this.getRenegadePairIdentifier(
+      srcToken.address,
+      destToken.address,
+    );
+    const pairId2 = this.getRenegadePairIdentifier(
+      destToken.address,
+      srcToken.address,
+    );
+
+    const pairData = levels[pairId1] || levels[pairId2];
+    if (!pairData) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .debug(
+          `${this.dexKey}: No pair data found for ${
+            srcToken.symbol || srcToken.address
+          }/${destToken.symbol || destToken.address}`,
+        );
+      return null;
+    }
+
+    // Validate pair data structure
+    if (
+      !pairData.bids ||
+      !pairData.asks ||
+      !Array.isArray(pairData.bids) ||
+      !Array.isArray(pairData.asks)
+    ) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .warn(
+          `${this.dexKey}: Invalid pair data structure for ${
+            pairId1 || pairId2
+          }`,
+        );
+      return null;
+    }
+
+    this.dexHelper
+      .getLogger(this.dexKey)
+      .debug(`${this.dexKey}: Found pair data for ${pairId1 || pairId2}`);
+
+    return pairData;
+  }
+
+  /**
+   * Validates a Renegade price level structure and values.
+   *
+   * Renegade-specific behavior:
+   * - Single price level per pair (midpoint crossing)
+   * - Price and size must be valid numbers
+   * - Structure must be [price: string, size: string]
+   * - Both values must be parseable as floats
+   *
+   * @param priceLevel - Price level to validate
+   * @returns true if price level is valid, false otherwise
+   */
+  private isValidPriceLevel(priceLevel: RenegadePriceLevel): boolean {
+    if (!priceLevel || priceLevel.length !== 2) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .warn(
+          `${this.dexKey}: Invalid price level structure: ${JSON.stringify(
+            priceLevel,
+          )}`,
+        );
+      return false;
+    }
+
+    // Validate price and size are valid numbers
+    const [priceStr, sizeStr] = priceLevel;
+    if (
+      !priceStr ||
+      !sizeStr ||
+      isNaN(parseFloat(priceStr)) ||
+      isNaN(parseFloat(sizeStr))
+    ) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .warn(
+          `${this.dexKey}: Invalid price or size values: ${priceStr}, ${sizeStr}`,
+        );
+      return false;
+    }
+
+    // Validate positive values
+    const price = parseFloat(priceStr);
+    const size = parseFloat(sizeStr);
+    if (price <= 0 || size <= 0) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .warn(
+          `${this.dexKey}: Non-positive price or size values: ${price}, ${size}`,
+        );
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Gets the appropriate price level based on ParaSwap side parameter.
+   *
+   * Renegade-specific behavior:
+   * - SELL orders use bids (selling to the bid)
+   * - BUY orders use asks (buying from the ask)
+   * - Single price level per pair (no complex order book traversal)
+   * - Validates price level structure and values
+   *
+   * @param pairData - Pair data containing bids and asks
+   * @param side - ParaSwap side parameter
+   * @returns Price level for the side, or null if invalid
+   */
+  private getPriceLevelForSide(
+    pairData: RenegadePairData,
+    side: SwapSide,
+  ): RenegadePriceLevel | null {
+    const levels = side === SwapSide.SELL ? pairData.bids : pairData.asks;
+
+    if (!levels || levels.length === 0) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .debug(
+          `${this.dexKey}: No ${
+            side === SwapSide.SELL ? 'bids' : 'asks'
+          } available`,
+        );
+      return null;
+    }
+
+    const priceLevel = levels[0];
+    if (!this.isValidPriceLevel(priceLevel)) {
+      return null;
+    }
+
+    this.dexHelper
+      .getLogger(this.dexKey)
+      .debug(
+        `${this.dexKey}: Using ${
+          side === SwapSide.SELL ? 'bid' : 'ask'
+        } level: price=${priceLevel[0]}, size=${priceLevel[1]}`,
+      );
+
+    return priceLevel;
+  }
+
+  // ========================================
+  // | PRICE CALCULATION HELPERS |
+  // ========================================
+
+  /**
+   * Converts amount from smallest token units to token units.
+   *
+   * Renegade-specific behavior:
+   * - Handles different token decimals (USDC=6, WETH=18)
+   * - Uses safe floating point conversion
+   * - Accounts for precision in calculations
+   *
+   * @param amount - Amount in smallest token units
+   * @param token - Token (for decimal places)
+   * @returns Amount in token units
+   */
+  private convertAmountToTokenUnits(amount: bigint, token: Token): number {
+    return Number(amount) / 10 ** token.decimals;
+  }
+
+  /**
+   * Converts amount from token units to smallest token units.
+   *
+   * Renegade-specific behavior:
+   * - Handles different token decimals (USDC=6, WETH=18)
+   * - Uses Math.floor for integer conversion
+   * - Ensures no precision loss in final amounts
+   *
+   * @param amount - Amount in token units
+   * @param token - Token (for decimal places)
+   * @returns Amount in smallest token units
+   */
+  private convertTokenUnitsToAmount(amount: number, token: Token): bigint {
+    return BigInt(Math.floor(amount * 10 ** token.decimals));
+  }
+
+  /**
+   * Calculates price for partial fill when input exceeds available liquidity.
+   *
+   * Renegade-specific behavior:
+   * - Returns maximum available liquidity when input > size
+   * - Uses single price level (no slippage within level)
+   * - Handles decimal conversion properly
+   * - Supports competitive positioning in ParaSwap routing
+   *
+   * @param inputAmount - Requested input amount
+   * @param availableSize - Available liquidity size
+   * @param price - Price per unit
+   * @param outputToken - Output token (for decimals)
+   * @returns Output amount for partial fill
+   */
+  private calculatePartialFillPrice(
+    inputAmount: bigint,
+    availableSize: number,
+    price: number,
+    outputToken: Token,
+  ): bigint {
+    const inputInTokenUnits = this.convertAmountToTokenUnits(
+      inputAmount,
+      outputToken,
+    );
+
+    this.dexHelper
+      .getLogger(this.dexKey)
+      .debug(
+        `${this.dexKey}: Partial fill - requested: ${inputInTokenUnits}, available: ${availableSize}`,
+      );
+
+    // Use maximum available liquidity
+    const outputInTokenUnits = availableSize * price;
+    return this.convertTokenUnitsToAmount(outputInTokenUnits, outputToken);
+  }
+
+  /**
+   * Calculates prices for all input amounts using a single price level.
+   *
+   * Renegade-specific behavior:
+   * - Uses single price level per pair (midpoint crossing)
+   * - Handles partial fills when input amount exceeds available liquidity
+   * - Supports competitive positioning in ParaSwap routing
+   * - Proper decimal handling for different token types
+   *
+   * @param amounts - Array of input amounts (in smallest token units)
+   * @param priceLevel - Single price level [price, size] from Renegade
+   * @param srcToken - Source token
+   * @param destToken - Destination token
+   * @param side - Whether this is SELL or BUY
+   * @returns Array of output amounts (in smallest token units)
+   */
+  private calculatePricesFromSingleLevel(
+    amounts: bigint[],
+    priceLevel: RenegadePriceLevel,
+    srcToken: Token,
+    destToken: Token,
+    side: SwapSide,
+  ): bigint[] {
+    const price = parseFloat(priceLevel[0]);
+    const availableSize = parseFloat(priceLevel[1]);
+
+    this.dexHelper
+      .getLogger(this.dexKey)
+      .debug(
+        `${this.dexKey}: Price level - price: ${price}, size: ${availableSize}, side: ${side}`,
+      );
+
+    return amounts.map(inputAmount => {
+      // Convert input amount to token units (accounting for decimals)
+      const inputToken = side === SwapSide.SELL ? srcToken : destToken;
+      const inputInTokenUnits = this.convertAmountToTokenUnits(
+        inputAmount,
+        inputToken,
+      );
+
+      // Check if we have sufficient liquidity
+      if (inputInTokenUnits > availableSize) {
+        // Return partial fill - use maximum available liquidity
+        const outputToken = side === SwapSide.SELL ? destToken : srcToken;
+        return this.calculatePartialFillPrice(
+          inputAmount,
+          availableSize,
+          price,
+          outputToken,
+        );
+      }
+
+      // Calculate output amount
+      const outputInTokenUnits = inputInTokenUnits * price;
+      const outputToken = side === SwapSide.SELL ? destToken : srcToken;
+
+      return this.convertTokenUnitsToAmount(outputInTokenUnits, outputToken);
+    });
+  }
+
+  // ========================================
+  // | CONFLICT RESOLUTION HELPERS |
+  // ========================================
+
+  /**
+   * Determines Renegade's expected side based on USDC direction.
+   *
+   * Renegade-specific behavior:
+   * - Sending USDC = BUY (buying the other token with USDC)
+   * - Receiving USDC = SELL (selling the other token for USDC)
+   * - This is Renegade's internal USDC-centric logic
+   *
+   * @param srcToken - Source token
+   * @param destToken - Destination token
+   * @returns Expected SwapSide based on USDC direction
+   */
+  private getUSDCExpectedSide(srcToken: Token, destToken: Token): SwapSide {
+    const isSrcTokenUSDC = this.isTokenUSDC(srcToken);
+
+    if (isSrcTokenUSDC) {
+      // Sending USDC = BUY (buying the other token with USDC)
+      return SwapSide.BUY;
+    } else {
+      // Receiving USDC = SELL (selling the other token for USDC)
+      return SwapSide.SELL;
+    }
+  }
+
+  /**
+   * Validates that the USDC direction aligns with ParaSwap's side parameter.
+   *
+   * Renegade-specific behavior:
+   * - Throws error on non-obvious scenarios to prevent incorrect pricing
+   * - Prevents incorrect pricing in ambiguous cases
+   * - Documents conflicts for manual review
+   * - Uses USDC-centric logic to determine expected side
+   *
+   * @param srcToken - Source token
+   * @param destToken - Destination token
+   * @param side - ParaSwap side parameter
+   * @throws Error if USDC direction conflicts with side parameter
+   */
+  private validateUSDCAndSideAlignment(
+    srcToken: Token,
+    destToken: Token,
+    side: SwapSide,
+  ): void {
+    const usdcAddress = USDC_ADDRESSES[this.network];
+    if (!usdcAddress) {
+      return; // No USDC validation if not configured
+    }
+
+    const isSrcTokenUSDC = this.isTokenUSDC(srcToken);
+    const isDestTokenUSDC = this.isTokenUSDC(destToken);
+
+    // Skip validation if neither token is USDC (shouldn't happen due to getPoolIdentifiers)
+    if (!isSrcTokenUSDC && !isDestTokenUSDC) {
+      return;
+    }
+
+    // Determine Renegade's expected side based on USDC direction
+    const renegadeExpectedSide = this.getUSDCExpectedSide(srcToken, destToken);
+
+    // Check for conflict
+    if (side !== renegadeExpectedSide) {
+      const conflictType = isSrcTokenUSDC
+        ? `SELL USDC (ParaSwap: ${side}, Renegade expects: ${renegadeExpectedSide})`
+        : `BUY USDC (ParaSwap: ${side}, Renegade expects: ${renegadeExpectedSide})`;
+
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .error(
+          `${this.dexKey}: USDC/side parameter conflict detected: ${conflictType}. ` +
+            `This scenario needs manual review for correct bid/ask selection.`,
+        );
+
+      throw new Error(
+        `Renegade USDC/side parameter conflict: ${conflictType}. ` +
+          `ParaSwap side=${side} conflicts with Renegade's USDC-centric logic. ` +
+          `This scenario requires manual validation for correct bid/ask selection.`,
+      );
+    }
+
+    this.dexHelper
+      .getLogger(this.dexKey)
+      .debug(
+        `${this.dexKey}: USDC/side alignment validated - ${
+          isSrcTokenUSDC ? 'SELL' : 'BUY'
+        } USDC matches side=${side}`,
+      );
+  }
+
   getAdapterParam(
     _srcToken: Address,
     _destToken: Address,
@@ -144,37 +646,13 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
         return [];
       }
 
-      // Identify USDC token
-      const usdcAddress = USDC_ADDRESSES[this.network];
-      if (!usdcAddress) {
-        this.dexHelper
-          .getLogger(this.dexKey)
-          .warn(`USDC address not configured for network ${this.network}`);
+      // Validate Renegade pair requirements
+      if (!this.isValidRenegadePair(srcToken, destToken)) {
         return [];
       }
 
-      const isSrcTokenUSDC =
-        srcToken.address.toLowerCase() === usdcAddress.toLowerCase();
-      const isDestTokenUSDC =
-        destToken.address.toLowerCase() === usdcAddress.toLowerCase();
-
-      // Verify exactly one token is USDC (Renegade requirement)
-      if (!(isSrcTokenUSDC !== isDestTokenUSDC)) {
-        // XOR: exactly one is USDC
-        return [];
-      }
-
-      // Check if pair exists in levels (try both directions)
-      const pairId1 = this.getRenegadePairIdentifier(
-        srcToken.address,
-        destToken.address,
-      );
-      const pairId2 = this.getRenegadePairIdentifier(
-        destToken.address,
-        srcToken.address,
-      );
-
-      const pairData = levels[pairId1] || levels[pairId2];
+      // Check if pair exists in levels
+      const pairData = this.findPairInLevels(levels, srcToken, destToken);
       if (!pairData) {
         return [];
       }
@@ -189,17 +667,141 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     }
   }
 
-  getPricesVolume(
-    _srcToken: Token,
-    _destToken: Token,
-    _amounts: bigint[],
-    _side: SwapSide,
-    _blockNumber: number,
-    _limitPools?: string[],
-    _transferFees?: TransferFeeParams,
-    _isFirstSwap?: boolean,
+  /**
+   * Returns pool prices for given amounts using Renegade's order book.
+   *
+   * Renegade-specific behavior:
+   * - Only supports USDC pairs (exactly one token must be USDC)
+   * - Uses single price level per pair (midpoint crossing)
+   * - Supports partial fills (returns max available when input > liquidity)
+   * - Returns null if pair doesn't exist or API fails
+   *
+   * @param srcToken - Source token for the swap
+   * @param destToken - Destination token for the swap
+   * @param amounts - Array of input amounts (in smallest token units)
+   * @param side - Whether this is a SELL (src->dest) or BUY (dest->src) operation
+   * @param blockNumber - Current block number (used for state consistency)
+   * @param limitPools - Optional array of pool identifiers to limit pricing to
+   * @param transferFees - Optional transfer fee parameters (not used by Renegade)
+   * @param isFirstSwap - Whether this is the first swap in a multi-hop route
+   * @returns Promise resolving to ExchangePrices array or null if no pricing available
+   */
+  async getPricesVolume(
+    srcToken: Token,
+    destToken: Token,
+    amounts: bigint[],
+    side: SwapSide,
+    blockNumber: number,
+    limitPools?: string[],
+    transferFees?: TransferFeeParams,
+    isFirstSwap?: boolean,
   ): Promise<ExchangePrices<RenegadeData> | null> {
-    throw new Error('Method not implemented.');
+    try {
+      // 1. Input validation
+      if (srcToken.address.toLowerCase() === destToken.address.toLowerCase()) {
+        this.dexHelper
+          .getLogger(this.dexKey)
+          .debug(`${this.dexKey}: Same token addresses, returning null`);
+        return null;
+      }
+
+      if (amounts.length === 0) {
+        this.dexHelper
+          .getLogger(this.dexKey)
+          .debug(`${this.dexKey}: Empty amounts array, returning null`);
+        return null;
+      }
+
+      // Validate all amounts are positive
+      const hasInvalidAmounts = amounts.some(amount => amount <= 0n);
+      if (hasInvalidAmounts) {
+        this.dexHelper
+          .getLogger(this.dexKey)
+          .warn(`${this.dexKey}: Found non-positive amounts, returning null`);
+        return null;
+      }
+
+      // 2. Validate USDC/side parameter alignment (error on conflicts)
+      this.validateUSDCAndSideAlignment(srcToken, destToken, side);
+
+      // 3. Get pool identifiers (this handles USDC validation internally)
+      const pools =
+        limitPools ??
+        (await this.getPoolIdentifiers(srcToken, destToken, side, blockNumber));
+
+      if (pools.length === 0) {
+        this.dexHelper
+          .getLogger(this.dexKey)
+          .debug(
+            `${this.dexKey}: No valid pools found for pair ${
+              srcToken.symbol || srcToken.address
+            }/${destToken.symbol || destToken.address}`,
+          );
+        return null;
+      }
+
+      // 4. Fetch order book levels from Renegade API
+      const levels = await this.rateFetcher.fetchLevels();
+      if (!levels) {
+        this.dexHelper
+          .getLogger(this.dexKey)
+          .warn(`${this.dexKey}: Failed to fetch levels from API`);
+        return null;
+      }
+
+      // 5. Extract pair data for this token combination
+      const pairData = this.findPairInLevels(levels, srcToken, destToken);
+      if (!pairData) {
+        this.dexHelper
+          .getLogger(this.dexKey)
+          .debug(
+            `${this.dexKey}: No pair data found for ${
+              srcToken.symbol || srcToken.address
+            }/${destToken.symbol || destToken.address}`,
+          );
+        return null;
+      }
+
+      // 6. Get the appropriate price level for this side
+      const priceLevel = this.getPriceLevelForSide(pairData, side);
+      if (!priceLevel) {
+        this.dexHelper
+          .getLogger(this.dexKey)
+          .debug(`${this.dexKey}: No valid price level for side ${side}`);
+        return null;
+      }
+
+      // 7. Calculate prices for all amounts
+      const prices = this.calculatePricesFromSingleLevel(
+        amounts,
+        priceLevel,
+        srcToken,
+        destToken,
+        side,
+      );
+
+      // 8. Return ExchangePrices structure
+      const unit = BigInt(
+        10 ** (side === SwapSide.SELL ? srcToken.decimals : destToken.decimals),
+      );
+
+      return [
+        {
+          prices,
+          unit,
+          data: {}, // Empty RenegadeData for now
+          exchange: this.dexKey,
+          gasCost: RENEGADE_GAS_COST,
+          poolAddresses: [], // Not applicable for Renegade
+          poolIdentifiers: pools,
+        },
+      ];
+    } catch (error) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .error(`${this.dexKey}: Error in getPricesVolume:`, error);
+      return null;
+    }
   }
 
   getCalldataGasCost(_poolPrices: PoolPrices<RenegadeData>): number | number[] {
