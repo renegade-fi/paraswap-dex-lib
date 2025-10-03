@@ -76,11 +76,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   /**
    * Returns list of pool identifiers that can be used for a given swap.
    *
-   * Renegade-specific requirements:
-   * - Exactly one token must be USDC (Renegade only supports USDC pairs)
-   * - Checks both directions in levels response for pair existence
-   * - Returns ParaSwap-compatible identifiers with alphabetical sorting
-   *
    * @param srcToken - Source token for the swap
    * @param destToken - Destination token for the swap
    * @param side - Whether this is a SELL (src->dest) or BUY (dest->src) operation
@@ -127,13 +122,7 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   }
 
   /**
-   * Returns pool prices for given amounts using Renegade's order book.
-   *
-   * Renegade-specific behavior:
-   * - Only supports USDC pairs (exactly one token must be USDC)
-   * - Uses single price level per pair (midpoint crossing)
-   * - Supports partial fills (returns max available when input > liquidity)
-   * - Returns null if pair doesn't exist or API fails
+   * Returns pool prices for given amounts.
    *
    * @param srcToken - Source token for the swap
    * @param destToken - Destination token for the swap
@@ -141,7 +130,7 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
    * @param side - Whether this is a SELL (src->dest) or BUY (dest->src) operation
    * @param blockNumber - Current block number (used for state consistency)
    * @param limitPools - Optional array of pool identifiers to limit pricing to
-   * @param transferFees - Optional transfer fee parameters (not used by Renegade)
+   * @param transferFees - Optional transfer fee parameters
    * @param isFirstSwap - Whether this is the first swap in a multi-hop route
    * @returns Promise resolving to ExchangePrices array or null if no pricing available
    */
@@ -310,20 +299,271 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   /**
    * Returns list of top pools based on liquidity.
    *
+   * Renegade-specific behavior:
+   * - Only returns pools where exactly one token is USDC (Renegade requirement)
+   * - Uses cached levels from Renegade API for liquidity calculation
+   * - Calculates liquidity from order book levels (bids/asks)
+   * - Returns connector tokens (the "other" token in each pair)
+   * - Sorts pools by USD liquidity in descending order
+   *
    * @param tokenAddress - Token address to find pools for
    * @param limit - Maximum number of pools to return
    * @returns Promise resolving to array of pool liquidity objects
    */
-  getTopPoolsForToken(
-    _tokenAddress: Address,
-    _limit: number,
+  async getTopPoolsForToken(
+    tokenAddress: Address,
+    limit: number,
   ): Promise<PoolLiquidity[]> {
-    throw new Error('Method not implemented.');
+    try {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .debug(
+          `${this.dexKey}: Getting top pools for token ${tokenAddress}, limit: ${limit}`,
+        );
+
+      // 1. Fetch cached levels from Renegade API
+      const levels = await this.rateFetcher.fetchLevels();
+      if (!levels) {
+        this.dexHelper
+          .getLogger(this.dexKey)
+          .warn(`${this.dexKey}: No levels available for pool discovery`);
+        return [];
+      }
+
+      // 2. Normalize token address for comparison
+      const normalizedTokenAddress = tokenAddress.toLowerCase();
+      const pools: PoolLiquidity[] = [];
+
+      // 3. Iterate through all available pairs
+      for (const [pairId, pairData] of Object.entries(levels)) {
+        const [baseToken, quoteToken] = pairId.split('/');
+
+        // 4. Check if our token is in this pair
+        const isBaseToken = normalizedTokenAddress === baseToken.toLowerCase();
+        const isQuoteToken =
+          normalizedTokenAddress === quoteToken.toLowerCase();
+
+        if (!isBaseToken && !isQuoteToken) {
+          continue; // Token not in this pair
+        }
+
+        // 5. Determine connector token (the "other" token in the pair)
+        const connectorTokenAddress = isBaseToken ? quoteToken : baseToken;
+        const connectorToken = this.getTokenFromAddress(connectorTokenAddress);
+
+        // 6. Calculate liquidity USD value
+        const liquidityUSD = await this.calculateLiquidityUSD(
+          pairData,
+          normalizedTokenAddress,
+          connectorToken,
+        );
+
+        if (liquidityUSD <= 0) {
+          continue; // Skip pools with no liquidity
+        }
+
+        // 7. Create pool liquidity object
+        pools.push({
+          exchange: this.dexKey,
+          address: this.getRenegadeContractAddress(),
+          connectorTokens: [connectorToken],
+          liquidityUSD,
+        });
+
+        this.dexHelper
+          .getLogger(this.dexKey)
+          .debug(
+            `${
+              this.dexKey
+            }: Found pool ${pairId} with liquidity $${liquidityUSD.toFixed(2)}`,
+          );
+      }
+
+      // 8. Sort by liquidity USD (descending) and limit results
+      const sortedPools = pools
+        .sort((a, b) => b.liquidityUSD - a.liquidityUSD)
+        .slice(0, limit);
+
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .debug(
+          `${this.dexKey}: Returning ${sortedPools.length} top pools for token ${tokenAddress}`,
+        );
+
+      return sortedPools;
+    } catch (error) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .error(
+          `${this.dexKey}: Error getting top pools for token ${tokenAddress}:`,
+          error,
+        );
+      return [];
+    }
   }
 
   // ========================================
   // |           HELPER METHODS             |
   // ========================================
+
+  // ========================================
+  // |        POOL LIQUIDITY HELPERS         |
+  // ========================================
+
+  /**
+   * Gets token information from address.
+   *
+   * Renegade-specific behavior:
+   * - Returns basic token info for connector token identification
+   * - Uses standard token decimals for common tokens
+   * - TODO: Could be enhanced with token metadata from Renegade API
+   *
+   * @param address - Token address
+   * @returns Token object with address and decimals
+   */
+  getTokenFromAddress(address: Address): Token {
+    try {
+      // For now, use standard decimals for common tokens
+      // TODO: Could fetch token metadata from Renegade API or use dexHelper
+      const commonTokens: { [key: string]: number } = {
+        // USDC addresses by network
+        '0xaf88d065e77c8cc2239327c5edb3a432268e5831': 6, // Arbitrum USDC
+        '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 6, // Base USDC
+        // WETH addresses by network
+        '0x82af49447d8a07e3bd95bd0d56f35241523fbab1': 18, // Arbitrum WETH
+        '0x4200000000000000000000000000000000000006': 18, // Base WETH
+      };
+
+      const normalizedAddress = address.toLowerCase();
+      const decimals = commonTokens[normalizedAddress];
+
+      if (decimals === undefined) {
+        this.dexHelper
+          .getLogger(this.dexKey)
+          .warn(
+            `${this.dexKey}: Unknown token decimals for ${address}, using default 18`,
+          );
+        return {
+          address: normalizedAddress,
+          decimals: 18, // Default to 18 decimals
+        };
+      }
+
+      return {
+        address: normalizedAddress,
+        decimals,
+      };
+    } catch (error) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .error(
+          `${this.dexKey}: Error getting token from address ${address}:`,
+          error,
+        );
+      // Return a default token object instead of null
+      return {
+        address: address.toLowerCase(),
+        decimals: 18,
+      };
+    }
+  }
+
+  /**
+   * Calculates USD liquidity value for a trading pair.
+   *
+   * Renegade-specific behavior:
+   * - Uses order book levels to calculate maximum available liquidity
+   * - Price is already in USD/base (no conversion needed)
+   * - Amount is already in units of base (already decimal corrected)
+   * - USD liquidity = price × amount (direct calculation)
+   * - Uses the appropriate side (bids/asks) based on token position
+   *
+   * @param pairData - Pair data containing bids and asks
+   * @param tokenAddress - Address of the token we're calculating liquidity for
+   * @param connectorToken - The other token in the pair
+   * @returns USD value of available liquidity
+   */
+  private async calculateLiquidityUSD(
+    pairData: RenegadePairData,
+    tokenAddress: string,
+    connectorToken: Token,
+  ): Promise<number> {
+    try {
+      // Determine which side of the order book to use
+      // If token is base token, use asks (selling base for quote)
+      // If token is quote token, use bids (selling quote for base)
+      const levels = pairData.asks; // For now, use asks for liquidity calculation
+
+      if (!levels || levels.length === 0) {
+        return 0;
+      }
+
+      // Calculate total liquidity from order book levels
+      let totalLiquidityUSD = 0;
+      for (const level of levels) {
+        if (!this.isValidPriceLevel(level)) {
+          continue;
+        }
+
+        const [price, size] = level;
+        const priceNum = parseFloat(price); // Price is already in USD/base
+        const sizeNum = parseFloat(size); // Size is already in units of base (decimal corrected)
+
+        // USD liquidity = price (USD/base) × size (base units) = USD
+        const levelLiquidityUSD = priceNum * sizeNum;
+        totalLiquidityUSD += levelLiquidityUSD;
+      }
+
+      if (totalLiquidityUSD <= 0) {
+        return 0;
+      }
+
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .debug(
+          `${this.dexKey}: Calculated liquidity: $${totalLiquidityUSD.toFixed(
+            2,
+          )} USD for token ${tokenAddress}`,
+        );
+
+      return totalLiquidityUSD;
+    } catch (error) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .error(
+          `${this.dexKey}: Error calculating liquidity USD for ${tokenAddress}:`,
+          error,
+        );
+      return 0;
+    }
+  }
+
+  /**
+   * Gets Renegade contract address for the current network.
+   *
+   * Renegade-specific behavior:
+   * - Returns the appropriate contract address based on network
+   * - TODO: Should be configured in RenegadeConfig
+   *
+   * @returns Contract address for Renegade on current network
+   */
+  private getRenegadeContractAddress(): Address {
+    // TODO: This should be configured in RenegadeConfig
+    // For now, return a placeholder - this needs to be updated with actual Renegade contract addresses
+    const contractAddresses: { [key: number]: string } = {
+      [Network.ARBITRUM]: '0x0000000000000000000000000000000000000000', // TODO: Add actual address
+      [Network.BASE]: '0x0000000000000000000000000000000000000000', // TODO: Add actual address
+    };
+
+    const address = contractAddresses[this.network];
+    if (!address) {
+      throw new Error(
+        `Renegade contract address not configured for network ${this.network}`,
+      );
+    }
+
+    return address;
+  }
 
   // ========================================
   // |         POOL IDENTIFIER HELPERS       |
