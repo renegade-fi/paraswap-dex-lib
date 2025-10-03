@@ -1,0 +1,59 @@
+/**
+ * Constants for Renegade DEX integration
+ */
+
+import { Network } from '../../constants';
+
+// Base API URL template - subdomain varies by network
+export const RENEGADE_API_URL_TEMPLATE =
+  'https://{network}.auth-server.renegade.fi';
+export const RENEGADE_LEVELS_ENDPOINT = '/rfqt/v3/levels';
+
+// Network to Renegade subdomain mapping
+export const RENEGADE_NETWORK_MAPPING: { [key in Network]?: string } = {
+  [Network.ARBITRUM]: 'arbitrum-one',
+  [Network.BASE]: 'base-mainnet',
+  // TODO: Add testnet mappings when needed
+  // [Network.ARBITRUM_SEPOLIA]: 'arbitrum-sepolia',
+  // [Network.BASE_SEPOLIA]: 'base-sepolia',
+};
+
+/**
+ * Build Renegade API URL for a specific network.
+ *
+ * @param network - ParaSwap network identifier
+ * @returns Complete API URL for the network
+ * @throws Error if network is not supported by Renegade
+ */
+export function buildRenegadeApiUrl(network: Network): string {
+  const renegadeNetwork = RENEGADE_NETWORK_MAPPING[network];
+  if (!renegadeNetwork) {
+    throw new Error(`Network ${network} is not supported by Renegade`);
+  }
+
+  return RENEGADE_API_URL_TEMPLATE.replace('{network}', renegadeNetwork);
+}
+
+// TODO: Add caching constants later
+// export const RENEGADE_LEVELS_CACHE_TTL = 30; // seconds
+// export const RENEGADE_LEVELS_POLLING_INTERVAL = 15000; // milliseconds
+// export const RENEGADE_LEVELS_CACHE_KEY = 'renegade_levels';
+
+// API timeout settings
+export const RENEGADE_API_TIMEOUT_MS = 10000; // 10 seconds
+
+// Authentication constants
+export const RENEGADE_HEADER_PREFIX = 'x-renegade';
+export const RENEGADE_API_KEY_HEADER = 'x-renegade-api-key';
+export const RENEGADE_AUTH_HEADER = 'x-renegade-auth';
+export const RENEGADE_AUTH_EXPIRATION_HEADER = 'x-renegade-auth-expiration';
+export const REQUEST_SIGNATURE_DURATION_MS = 10 * 1000; // 10 seconds
+
+// Gas cost estimation
+export const RENEGADE_GAS_COST = 150000; // Estimated gas cost for Renegade swaps
+
+// USDC token addresses by network (Renegade requirement: exactly one token must be USDC)
+export const USDC_ADDRESSES: { [network: number]: string } = {
+  [Network.ARBITRUM]: '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
+  [Network.BASE]: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+};

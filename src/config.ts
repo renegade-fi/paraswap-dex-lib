@@ -35,6 +35,8 @@ type BaseConfig = {
   dexalotAuthToken?: string;
   bebopAuthName?: string;
   bebopAuthToken?: string;
+  renegadeApiKey?: string;
+  renegadeApiSecret?: string;
   forceRpcFallbackDexs: string[];
 };
 
@@ -76,6 +78,8 @@ const baseConfigs: { [network: number]: BaseConfig } = {
     hashFlowAuthToken: process.env.API_KEY_HASHFLOW_AUTH_TOKEN || '',
     bebopAuthName: process.env.API_KEY_BEBOP_AUTH_NAME || '',
     bebopAuthToken: process.env.API_KEY_BEBOP_AUTH_TOKEN || '',
+    renegadeApiKey: process.env.API_KEY_RENEGADE_API_KEY || '',
+    renegadeApiSecret: process.env.API_KEY_RENEGADE_API_SECRET || '',
     hashFlowDisabledMMs:
       process.env[`HASHFLOW_DISABLED_MMS_1`]?.split(',') || [],
     uniswapV3EventLoggingSampleRate: 0,
@@ -150,6 +154,8 @@ const baseConfigs: { [network: number]: BaseConfig } = {
     dexalotAuthToken: process.env.API_KEY_DEXALOT_AUTH_TOKEN || '',
     bebopAuthName: process.env.API_KEY_BEBOP_AUTH_NAME || '',
     bebopAuthToken: process.env.API_KEY_BEBOP_AUTH_TOKEN || '',
+    renegadeApiKey: process.env.API_KEY_RENEGADE_API_KEY || '',
+    renegadeApiSecret: process.env.API_KEY_RENEGADE_API_SECRET || '',
     executorsAddresses: {
       Executor01: '0x000010036C0190E009a000d0fc3541100A07380A',
       Executor02: '0x00C600b30fb0400701010F4b080409018B9006E0',
@@ -301,6 +307,8 @@ const baseConfigs: { [network: number]: BaseConfig } = {
     dexalotAuthToken: process.env.API_KEY_DEXALOT_AUTH_TOKEN || '',
     bebopAuthName: process.env.API_KEY_BEBOP_AUTH_NAME || '',
     bebopAuthToken: process.env.API_KEY_BEBOP_AUTH_TOKEN || '',
+    renegadeApiKey: process.env.API_KEY_RENEGADE_API_KEY || '',
+    renegadeApiSecret: process.env.API_KEY_RENEGADE_API_SECRET || '',
     adapterAddresses: {
       ArbitrumAdapter01: '0x369A2FDb910d432f0a07381a5E3d27572c876713',
       ArbitrumAdapter02: '0x58a5f0b73969800FAFf8556cD2187E3FCE71A6cb',
@@ -349,6 +357,8 @@ const baseConfigs: { [network: number]: BaseConfig } = {
     uniswapV3EventLoggingSampleRate: 0,
     bebopAuthName: process.env.API_KEY_BEBOP_AUTH_NAME || '',
     bebopAuthToken: process.env.API_KEY_BEBOP_AUTH_TOKEN || '',
+    renegadeApiKey: process.env.API_KEY_RENEGADE_API_KEY || '',
+    renegadeApiSecret: process.env.API_KEY_RENEGADE_API_SECRET || '',
     rfqConfigs: {},
     rpcPollingMaxAllowedStateDelayInBlocks: 5,
     rpcPollingBlocksBackToTriggerUpdate: 3,
@@ -399,6 +409,8 @@ const baseConfigs: { [network: number]: BaseConfig } = {
     dexalotAuthToken: process.env.API_KEY_DEXALOT_AUTH_TOKEN || '',
     bebopAuthName: process.env.API_KEY_BEBOP_AUTH_NAME || '',
     bebopAuthToken: process.env.API_KEY_BEBOP_AUTH_TOKEN || '',
+    renegadeApiKey: process.env.API_KEY_RENEGADE_API_KEY || '',
+    renegadeApiSecret: process.env.API_KEY_RENEGADE_API_SECRET || '',
     hashFlowAuthToken: process.env.API_KEY_HASHFLOW_AUTH_TOKEN || '',
     swaapV2AuthToken: process.env.API_KEY_SWAAP_V2_AUTH_TOKEN || '',
     hashFlowDisabledMMs: [],
