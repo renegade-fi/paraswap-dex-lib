@@ -18,12 +18,8 @@ export type RenegadePairData = {
 export type RenegadeRateFetcherConfig = {
   apiKey: string;
   apiSecret: string;
-  // TODO: Add caching config later
-  // cacheConfig?: {
-  //   levelsCacheKey: string;
-  //   levelsCacheTTL: number;
-  //   pollingInterval: number;
-  // };
+  levelsCacheKey: string;
+  levelsCacheTTL: number;
 };
 
 // Minimal token metadata for getTopPoolsForToken (YAGNI)

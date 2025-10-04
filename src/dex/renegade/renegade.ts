@@ -20,9 +20,22 @@ import {
 import { SimpleExchange } from '../simple-exchange';
 import { RateFetcher } from './rate-fetcher';
 import { TokenMetadataFetcher } from './token-metadata-fetcher';
-import { RenegadeRateFetcherConfig, RenegadeTokenMetadata } from './types';
+import { RenegadeLevelsResponse } from './renegade-levels-response';
+import {
+  RenegadeRateFetcherConfig,
+  RenegadeTokenMetadata,
+  RenegadePairData,
+} from './types';
 import { RenegadeConfig } from './config';
-import { RENEGADE_GAS_COST } from './constants';
+import {
+  RENEGADE_GAS_COST,
+  RENEGADE_LEVELS_CACHE_KEY,
+  RENEGADE_LEVELS_CACHE_TTL,
+  RENEGADE_LEVELS_POLLING_INTERVAL,
+  RENEGADE_TOKEN_METADATA_CACHE_KEY,
+  RENEGADE_TOKEN_METADATA_CACHE_TTL,
+  RENEGADE_TOKEN_METADATA_POLLING_INTERVAL,
+} from './constants';
 
 // Placeholder types - these will need to be properly defined
 export interface RenegadeData {
@@ -33,6 +46,7 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   readonly hasConstantPriceLargeAmounts = false;
   readonly needWrapNative = true;
   readonly isFeeOnTransferSupported = false;
+  readonly isStatePollingDex = true;
 
   public static dexKeysWithNetwork: { key: string; networks: Network[] }[] = [
     { key: 'Renegade', networks: [Network.ARBITRUM, Network.BASE] },
@@ -66,10 +80,12 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       'Renegade API secret is not specified with env variable API_KEY_RENEGADE_AUTH_API_SECRET',
     );
 
-    // Initialize rate fetcher with credentials
+    // Initialize rate fetcher with credentials and caching config
     const rateFetcherConfig: RenegadeRateFetcherConfig = {
       apiKey,
       apiSecret,
+      levelsCacheKey: RENEGADE_LEVELS_CACHE_KEY,
+      levelsCacheTTL: RENEGADE_LEVELS_CACHE_TTL,
     };
 
     this.rateFetcher = new RateFetcher(
@@ -91,6 +107,11 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   async initializePricing(blockNumber: number): Promise<void> {
     this.logger.info('Initializing Renegade pricing...');
     await this.setTokensMap();
+
+    // Start polling for price levels if not in slave mode
+    if (!this.dexHelper.config.isSlave) {
+      this.rateFetcher.start();
+    }
   }
 
   async updatePoolState(): Promise<void> {
@@ -113,6 +134,30 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     } else {
       this.logger.warn('Failed to fetch token metadata from GitHub');
     }
+  }
+
+  /**
+   * Get cached price levels from persistent cache.
+   *
+   * @returns Promise resolving to RenegadeLevelsResponse or null if not available
+   */
+  async getCachedLevels(): Promise<RenegadeLevelsResponse | null> {
+    const cachedLevels = await this.dexHelper.cache.getAndCacheLocally(
+      this.dexKey,
+      this.network,
+      RENEGADE_LEVELS_CACHE_KEY,
+      RENEGADE_LEVELS_CACHE_TTL,
+    );
+
+    if (cachedLevels) {
+      const rawData = JSON.parse(cachedLevels) as {
+        [pairIdentifier: string]: RenegadePairData;
+      };
+      const usdcAddress = RenegadeConfig['Renegade'][this.network].usdcAddress;
+      return new RenegadeLevelsResponse(rawData, usdcAddress);
+    }
+
+    return null;
   }
 
   /**
@@ -161,8 +206,8 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     }
 
     try {
-      // Get levels from API
-      const levels = await this.rateFetcher.fetchLevels();
+      // Get levels from cache (updated by polling)
+      const levels = await this.getCachedLevels();
       if (!levels) {
         return [];
       }
@@ -205,7 +250,7 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     transferFees?: TransferFeeParams,
     isFirstSwap?: boolean,
   ): Promise<ExchangePrices<RenegadeData> | null> {
-    const levels = await this.rateFetcher.fetchLevels();
+    const levels = await this.getCachedLevels();
     if (!levels) {
       return null;
     }
@@ -280,8 +325,8 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     limit: number,
   ): Promise<PoolLiquidity[]> {
     try {
-      // Fetch current price levels
-      const levels = await this.rateFetcher.fetchLevels();
+      // Get current price levels from cache
+      const levels = await this.getCachedLevels();
       if (!levels) {
         this.logger.warn(`No price levels available for token ${tokenAddress}`);
         return [];
@@ -317,9 +362,12 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
           : pairContext.pairData.asks;
 
         // Sum up USD notional sizes (size field is already USD!)
-        const liquidityUSD = levels.reduce((acc, [price, size]) => {
-          return acc + parseFloat(size);
-        }, 0);
+        const liquidityUSD = levels.reduce(
+          (acc: number, [price, size]: [string, string]) => {
+            return acc + parseFloat(size);
+          },
+          0,
+        );
 
         if (liquidityUSD > 0) {
           const connectorToken = isBase
@@ -413,8 +461,10 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   }
 
   async releaseResources(): Promise<void> {
-    // TODO: Implement resource cleanup if needed
     this.logger.info('Releasing Renegade resources...');
+    if (!this.dexHelper.config.isSlave) {
+      this.rateFetcher.stop();
+    }
   }
 
   // Helpers

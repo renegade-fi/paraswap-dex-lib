@@ -34,10 +34,14 @@ export function buildRenegadeApiUrl(network: Network): string {
   return RENEGADE_API_URL_TEMPLATE.replace('{network}', renegadeNetwork);
 }
 
-// TODO: Add caching constants later
-// export const RENEGADE_LEVELS_CACHE_TTL = 30; // seconds
-// export const RENEGADE_LEVELS_POLLING_INTERVAL = 15000; // milliseconds
-// export const RENEGADE_LEVELS_CACHE_KEY = 'renegade_levels';
+// Caching constants
+export const RENEGADE_LEVELS_CACHE_TTL = 30; // seconds
+export const RENEGADE_LEVELS_POLLING_INTERVAL = 15000; // milliseconds
+export const RENEGADE_LEVELS_CACHE_KEY = 'renegade_levels';
+
+export const RENEGADE_TOKEN_METADATA_CACHE_TTL = 3600; // 1 hour in seconds
+export const RENEGADE_TOKEN_METADATA_POLLING_INTERVAL = 3600000; // 1 hour in milliseconds
+export const RENEGADE_TOKEN_METADATA_CACHE_KEY = 'renegade_token_metadata';
 
 // API timeout settings
 export const RENEGADE_API_TIMEOUT_MS = 10000; // 10 seconds

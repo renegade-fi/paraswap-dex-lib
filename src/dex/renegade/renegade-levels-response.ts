@@ -124,6 +124,13 @@ export class RenegadeLevelsResponse {
   }
 
   /**
+   * Get the raw levels data.
+   */
+  getRawData(): { [pairIdentifier: string]: RenegadePairData } {
+    return this.levels;
+  }
+
+  /**
    * Get all pairs that contain the specified token.
    *
    * @param tokenAddress - Token address to search for

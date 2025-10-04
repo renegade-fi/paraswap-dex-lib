@@ -5,119 +5,158 @@ import { RenegadePairData, RenegadeRateFetcherConfig } from './types';
 import {
   buildRenegadeApiUrl,
   RENEGADE_LEVELS_ENDPOINT,
-  RENEGADE_API_TIMEOUT_MS,
+  RENEGADE_LEVELS_POLLING_INTERVAL,
 } from './constants';
 import { generateRenegadeAuthHeaders } from './auth-helper';
 import { RenegadeLevelsResponse } from './renegade-levels-response';
 import { RenegadeConfig } from './config';
+import { Fetcher, RequestInfo } from '../../lib/fetcher/fetcher';
+import { RequestConfig } from '../../dex-helper/irequest-wrapper';
 
 /**
- * Simplified RateFetcher for Renegade DEX integration.
+ * RateFetcher for Renegade DEX integration using the Fetcher class.
  *
- * This implementation bypasses caching for faster development and uses direct API calls.
- * TODO: Add caching and polling functionality later.
+ * This implementation uses the standard Fetcher class with HMAC-SHA256 authentication
+ * and includes polling functionality for real-time price level updates.
  */
 export class RateFetcher {
+  private levelsFetcher: Fetcher<RenegadeLevelsResponse>;
+
   constructor(
     private dexHelper: IDexHelper,
     private dexKey: string,
     private network: Network,
     private logger: Logger,
     private config: RenegadeRateFetcherConfig,
-  ) {}
+  ) {
+    // Build network-specific API URL
+    const baseUrl = buildRenegadeApiUrl(this.network);
+    const url = `${baseUrl}${RENEGADE_LEVELS_ENDPOINT}`;
 
-  /**
-   * Fetch price levels directly from Renegade API.
-   *
-   * Makes a direct API call to /rfqt/v3/levels endpoint with HMAC-SHA256 authentication.
-   * TODO: Add caching layer to avoid repeated API calls.
-   *
-   * @returns Promise resolving to RenegadeLevelsResponse or null if fetch fails
-   */
-  async fetchLevels(): Promise<RenegadeLevelsResponse | null> {
-    try {
-      this.logger.debug(
-        `${this.dexKey}: Fetching price levels from Renegade API`,
-      );
+    // Create authentication function for Renegade API
+    const authenticate = (options: RequestConfig): RequestConfig => {
+      // Ensure headers object exists
+      if (!options.headers) {
+        options.headers = {};
+      }
 
-      // Build network-specific API URL
-      const baseUrl = buildRenegadeApiUrl(this.network);
-      const url = `${baseUrl}${RENEGADE_LEVELS_ENDPOINT}`;
-
-      this.logger.debug(`${this.dexKey}: Using API URL: ${url}`);
+      // Convert headers to string format for auth function
+      const stringHeaders: Record<string, string> = {};
+      for (const [key, value] of Object.entries(options.headers)) {
+        stringHeaders[key] = String(value);
+      }
 
       // Generate authenticated headers using HMAC-SHA256
-      const baseHeaders = {
-        'Content-Type': 'application/json',
-      };
-
       const authenticatedHeaders = generateRenegadeAuthHeaders(
         RENEGADE_LEVELS_ENDPOINT,
-        '', // Empty string for GET request body
-        baseHeaders,
+        options.data ? JSON.stringify(options.data) : '', // Convert body to string
+        stringHeaders,
         this.config.apiKey,
         this.config.apiSecret,
       );
 
-      this.logger.debug(
-        `${this.dexKey}: Generated authenticated headers for API request`,
-      );
+      // Merge authenticated headers into request options
+      options.headers = { ...options.headers, ...authenticatedHeaders };
 
-      const response = await this.dexHelper.httpRequest.get<{
-        [pairIdentifier: string]: RenegadePairData;
-      }>(url, RENEGADE_API_TIMEOUT_MS, authenticatedHeaders);
+      return options;
+    };
 
-      if (!response) {
-        this.logger.warn(
-          `${this.dexKey}: No response received from Renegade API`,
-        );
-        return null;
+    // Create caster function to validate and transform response
+    const caster = (data: unknown): RenegadeLevelsResponse => {
+      if (typeof data !== 'object' || data === null) {
+        throw new Error('Invalid response format from Renegade API');
       }
 
-      // Validate response structure
-      if (typeof response !== 'object' || response === null) {
-        this.logger.error(
-          `${this.dexKey}: Invalid response format from Renegade API`,
-          response,
-        );
-        return null;
-      }
-
-      // Create response instance
+      const response = data as { [pairIdentifier: string]: RenegadePairData };
       const usdcAddress = RenegadeConfig['Renegade'][this.network].usdcAddress;
-      const levelsResponse = new RenegadeLevelsResponse(response, usdcAddress);
 
-      // Basic validation - check if we have at least one pair
-      const pairCount = Object.keys(response).length;
-      this.logger.debug(
-        `${this.dexKey}: Successfully fetched ${pairCount} price level pairs`,
-      );
+      return new RenegadeLevelsResponse(response, usdcAddress);
+    };
 
-      return levelsResponse;
-    } catch (error) {
-      this.logger.error(
-        `${this.dexKey}: Failed to fetch price levels from Renegade API:`,
-        error,
-      );
-      return null;
-    }
+    // Create request info for the Fetcher
+    const requestInfo: RequestInfo<RenegadeLevelsResponse> = {
+      requestOptions: {
+        url,
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+      caster,
+      authenticate,
+    };
+
+    // Initialize the Fetcher
+    this.levelsFetcher = new Fetcher<RenegadeLevelsResponse>(
+      this.dexHelper.httpRequest,
+      {
+        info: requestInfo,
+        handler: this.handleLevelsResponse.bind(this),
+      },
+      RENEGADE_LEVELS_POLLING_INTERVAL,
+      this.logger,
+    );
   }
 
-  // TODO: Add polling functionality later
-  // start(): void {
-  //   // Start periodic polling of price levels
-  // }
+  /**
+   * Handle successful levels response from the Fetcher.
+   *
+   * @param levelsResponse - The parsed and validated levels response
+   */
+  private handleLevelsResponse(levelsResponse: RenegadeLevelsResponse): void {
+    // Get raw data for serialization
+    const rawData = levelsResponse.getRawData();
+    const pairCount = Object.keys(rawData).length;
 
-  // stop(): void {
-  //   // Stop polling and cleanup resources
-  // }
+    // Write to persistent cache (like Bebop)
+    this.dexHelper.cache.setex(
+      this.dexKey,
+      this.network,
+      this.config.levelsCacheKey,
+      this.config.levelsCacheTTL,
+      JSON.stringify(rawData), // Serialize the raw pair data
+    );
 
-  // TODO: Add caching functionality later
-  // async getCachedLevels(): Promise<RenegadeLevelsResponse | null> {
-  //   // Get levels from cache, fallback to API if not available
-  // }
+    this.logger.debug(
+      `${this.dexKey}: Successfully cached ${pairCount} price level pairs`,
+    );
+  }
 
-  // private async cacheLevels(levels: RenegadeLevelsResponse): Promise<void> {
-  //   // Store levels in cache
-  // }
+  /**
+   * Start polling for price level updates.
+   *
+   * Begins periodic fetching of price levels from the Renegade API.
+   */
+  start(): void {
+    this.logger.info(`${this.dexKey}: Starting Renegade price levels polling`);
+    this.levelsFetcher.startPolling();
+  }
+
+  /**
+   * Stop polling for price level updates.
+   *
+   * Stops the periodic fetching and cleans up resources.
+   */
+  stop(): void {
+    this.logger.info(`${this.dexKey}: Stopping Renegade price levels polling`);
+    this.levelsFetcher.stopPolling();
+  }
+
+  /**
+   * Check if polling is currently active.
+   *
+   * @returns True if polling is active, false otherwise
+   */
+  isPolling(): boolean {
+    return this.levelsFetcher.isPolling();
+  }
+
+  /**
+   * Check if the last fetch operation succeeded.
+   *
+   * @returns True if the last fetch succeeded, false otherwise
+   */
+  isLastFetchSuccessful(): boolean {
+    return this.levelsFetcher.lastFetchSucceeded;
+  }
 }
