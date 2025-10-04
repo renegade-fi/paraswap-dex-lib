@@ -2,10 +2,6 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-// Set required environment variables for test networks
-process.env.HTTP_PROVIDER_42161 = 'https://arb1.arbitrum.io/rpc';
-process.env.HTTP_PROVIDER_8453 = 'https://mainnet.base.org';
-
 import { DummyDexHelper } from '../../dex-helper/index';
 import { Network, SwapSide } from '../../constants';
 import { BI_POWS } from '../../bigint-constants';
@@ -71,10 +67,7 @@ describe('Renegade', function () {
 
   describe('Arbitrum', () => {
     const network = Network.ARBITRUM;
-    const dexHelper = new DummyDexHelper(
-      network,
-      'https://arb1.arbitrum.io/rpc',
-    );
+    const dexHelper = new DummyDexHelper(network);
 
     const tokens = Tokens[network];
 
