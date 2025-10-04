@@ -1,13 +1,15 @@
 import { IDexHelper } from '../../dex-helper';
 import { Logger } from '../../types';
 import { Network } from '../../constants';
-import { RenegadeLevelsResponse, RenegadeRateFetcherConfig } from './types';
+import { RenegadePairData, RenegadeRateFetcherConfig } from './types';
 import {
   buildRenegadeApiUrl,
   RENEGADE_LEVELS_ENDPOINT,
   RENEGADE_API_TIMEOUT_MS,
 } from './constants';
 import { generateRenegadeAuthHeaders } from './auth-helper';
+import { RenegadeLevelsResponse } from './renegade-levels-response';
+import { RenegadeConfig } from './config';
 
 /**
  * Simplified RateFetcher for Renegade DEX integration.
@@ -30,7 +32,7 @@ export class RateFetcher {
    * Makes a direct API call to /rfqt/v3/levels endpoint with HMAC-SHA256 authentication.
    * TODO: Add caching layer to avoid repeated API calls.
    *
-   * @returns Promise resolving to price levels data or null if fetch fails
+   * @returns Promise resolving to RenegadeLevelsResponse or null if fetch fails
    */
   async fetchLevels(): Promise<RenegadeLevelsResponse | null> {
     try {
@@ -61,11 +63,9 @@ export class RateFetcher {
         `${this.dexKey}: Generated authenticated headers for API request`,
       );
 
-      const response = await this.dexHelper.httpRequest.get(
-        url,
-        RENEGADE_API_TIMEOUT_MS,
-        authenticatedHeaders,
-      );
+      const response = await this.dexHelper.httpRequest.get<{
+        [pairIdentifier: string]: RenegadePairData;
+      }>(url, RENEGADE_API_TIMEOUT_MS, authenticatedHeaders);
 
       if (!response) {
         this.logger.warn(
@@ -83,15 +83,17 @@ export class RateFetcher {
         return null;
       }
 
-      const levels = response as RenegadeLevelsResponse;
+      // Create response instance
+      const usdcAddress = RenegadeConfig['Renegade'][this.network].usdcAddress;
+      const levelsResponse = new RenegadeLevelsResponse(response, usdcAddress);
 
       // Basic validation - check if we have at least one pair
-      const pairCount = Object.keys(levels).length;
+      const pairCount = Object.keys(response).length;
       this.logger.debug(
         `${this.dexKey}: Successfully fetched ${pairCount} price level pairs`,
       );
 
-      return levels;
+      return levelsResponse;
     } catch (error) {
       this.logger.error(
         `${this.dexKey}: Failed to fetch price levels from Renegade API:`,
