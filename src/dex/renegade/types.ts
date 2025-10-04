@@ -33,3 +33,9 @@ export type RenegadeRateFetcherConfig = {
 
 // Data structure for DEX methods
 export type RenegadeData = {};
+
+// Configuration parameters for Renegade DEX per network
+export type DexParams = {
+  usdcAddress: string;
+  chainName: string;
+};

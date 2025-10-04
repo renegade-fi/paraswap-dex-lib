@@ -1,4 +1,5 @@
 import { assert } from 'ts-essentials';
+import BigNumber from 'bignumber.js';
 import * as CALLDATA_GAS_COST from '../../calldata-gas-cost';
 import { Network, SwapSide } from '../../constants';
 import { IDexHelper } from '../../dex-helper/idex-helper';
@@ -7,20 +8,25 @@ import {
   AdapterExchangeParam,
   Address,
   DexExchangeParam,
+  ExchangePrices,
   Logger,
   NumberAsString,
   PoolLiquidity,
   PoolPrices,
   SimpleExchangeParam,
   Token,
+  TransferFeeParams,
 } from '../../types';
 import { SimpleExchange } from '../simple-exchange';
 import { RateFetcher } from './rate-fetcher';
 import {
   RenegadeLevelsResponse,
   RenegadePairData,
+  RenegadePriceLevel,
   RenegadeRateFetcherConfig,
 } from './types';
+import { RenegadeConfig } from './config';
+import { RENEGADE_GAS_COST } from './constants';
 
 // Placeholder types - these will need to be properly defined
 export interface RenegadeData {
@@ -135,6 +141,19 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     }
   }
 
+  /**
+   * Returns pool prices for given amounts.
+   *
+   * @param srcToken - Source token for the swap
+   * @param destToken - Destination token for the swap
+   * @param amounts - Array of input amounts (in smallest token units)
+   * @param side - Whether this is a SELL (src->dest) or BUY (dest->src) operation
+   * @param blockNumber - Current block number (used for state consistency)
+   * @param limitPools - Optional array of pool identifiers to limit pricing to
+   * @param transferFees - Optional transfer fee parameters
+   * @param isFirstSwap - Whether this is the first swap in a multi-hop route
+   * @returns Promise resolving to ExchangePrices array or null if no pricing available
+   */
   async getPricesVolume(
     srcToken: Token,
     destToken: Token,
@@ -142,12 +161,99 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     side: SwapSide,
     blockNumber: number,
     limitPools?: string[],
-  ): Promise<PoolPrices<RenegadeData>[] | null> {
-    // TODO: Implement price calculation
-    this.logger.info(
-      `Getting prices for ${srcToken.address} -> ${destToken.address}`,
+    transferFees?: TransferFeeParams,
+    isFirstSwap?: boolean,
+  ): Promise<ExchangePrices<RenegadeData> | null> {
+    const levels = await this.rateFetcher.fetchLevels();
+    if (!levels) {
+      return null;
+    }
+
+    const srcIsUSDC = this.isTokenUSDC(srcToken);
+    const baseToken = srcIsUSDC ? destToken : srcToken;
+    const quoteToken = srcIsUSDC ? srcToken : destToken;
+    const pairId = this.getRenegadePairIdentifier(
+      baseToken.address,
+      quoteToken.address,
     );
-    return null;
+    const pair = levels[pairId];
+    if (!pair) {
+      return null;
+    }
+
+    // Renegade exposes a single midpoint level per pair; selling base hits bids, buying base hits asks.
+    const book = srcIsUSDC ? pair.asks : pair.bids;
+    if (!book.length) {
+      return null;
+    }
+
+    const [priceStr] = book[0];
+
+    // Renegade quotes every pair as base (non-USDC) over quote (USDC): price is USDC per base token, size is reported in base units.
+    const price = new BigNumber(priceStr);
+
+    const baseUnit = new BigNumber(10).pow(baseToken.decimals);
+    const quoteUnit = new BigNumber(10).pow(quoteToken.decimals);
+
+    const computeBaseDecimalFromAtomic = (value: bigint) =>
+      new BigNumber(value.toString()).dividedBy(baseUnit);
+    const computeQuoteDecimalFromAtomic = (value: bigint) =>
+      new BigNumber(value.toString()).dividedBy(quoteUnit);
+
+    const prices = amounts.map(amount => {
+      // v0 implementation: assume the midpoint level has enough size and ignore partial fill calculations.
+      if (!srcIsUSDC) {
+        if (side === SwapSide.SELL) {
+          const baseDecimal = computeBaseDecimalFromAtomic(amount);
+          const quoteDecimal = baseDecimal.multipliedBy(price);
+          const quoteAtomic = quoteDecimal
+            .multipliedBy(quoteUnit)
+            .decimalPlaces(0, BigNumber.ROUND_FLOOR);
+          return BigInt(quoteAtomic.toFixed(0));
+        }
+
+        const quoteDecimal = computeQuoteDecimalFromAtomic(amount);
+        const baseDecimal = quoteDecimal.dividedBy(price);
+        const baseAtomic = baseDecimal
+          .multipliedBy(baseUnit)
+          .decimalPlaces(0, BigNumber.ROUND_CEIL);
+        return BigInt(baseAtomic.toFixed(0));
+      }
+
+      if (side === SwapSide.SELL) {
+        const quoteDecimal = computeQuoteDecimalFromAtomic(amount);
+        const baseDecimal = quoteDecimal.dividedBy(price);
+        const baseAtomic = baseDecimal
+          .multipliedBy(baseUnit)
+          .decimalPlaces(0, BigNumber.ROUND_FLOOR);
+        return BigInt(baseAtomic.toFixed(0));
+      }
+
+      const baseDecimal = computeBaseDecimalFromAtomic(amount);
+      const quoteDecimal = baseDecimal.multipliedBy(price);
+      const quoteAtomic = quoteDecimal
+        .multipliedBy(quoteUnit)
+        .decimalPlaces(0, BigNumber.ROUND_CEIL);
+      return BigInt(quoteAtomic.toFixed(0));
+    });
+
+    const unitDecimals =
+      side === SwapSide.SELL ? destToken.decimals : srcToken.decimals;
+    const poolIdentifier = this.getPoolIdentifier(
+      srcToken.address,
+      destToken.address,
+    );
+
+    return [
+      {
+        prices,
+        unit: BigInt(unitDecimals),
+        data: {},
+        poolIdentifiers: [poolIdentifier],
+        exchange: this.dexKey,
+        gasCost: RENEGADE_GAS_COST,
+      },
+    ];
   }
 
   async getTopPoolsForToken(
@@ -214,30 +320,117 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   // Helpers
 
   /**
-   * Check if the token pair is valid for Renegade trading.
-   * Renegade requires exactly one token to be USDC.
+   * Checks if a token is USDC for the current network.
    *
-   * @param srcToken - Source token
-   * @param destToken - Destination token
-   * @returns True if pair is valid for Renegade
+   * Renegade-specific behavior:
+   * - Only supports USDC pairs (exactly one token must be USDC)
+   * - Uses network-specific USDC addresses from constants
+   * - Case-insensitive address comparison
+   *
+   * @param token - Token to check
+   * @returns true if token is USDC, false otherwise
    */
-  private isValidRenegadePair(srcToken: Token, destToken: Token): boolean {
-    const usdcAddresses = [
-      '0xaf88d065e77c8cc2239327c5edb3a432268e5831', // Arbitrum USDC
-      '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', // Base USDC
-    ];
+  private isTokenUSDC(token: Token): boolean {
+    const usdcAddress = this.getUSDCAddress(this.network);
+    if (!usdcAddress) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .warn(
+          `${this.dexKey}: USDC address not configured for network ${this.network}`,
+        );
+      return false;
+    }
 
-    const srcIsUsdc = usdcAddresses.includes(srcToken.address.toLowerCase());
-    const destIsUsdc = usdcAddresses.includes(destToken.address.toLowerCase());
-
-    // Exactly one token must be USDC
-    return srcIsUsdc !== destIsUsdc;
+    return token.address.toLowerCase() === usdcAddress.toLowerCase();
   }
 
   /**
-   * Find pair data in Renegade levels response.
+   * Validates that exactly one token is USDC (Renegade requirement).
    *
-   * @param levels - Renegade levels response
+   * Renegade-specific behavior:
+   * - All pairs must have exactly one USDC token
+   * - Neither token can be USDC (invalid pair)
+   * - Both tokens cannot be USDC (invalid pair)
+   * - Uses XOR logic: exactly one must be true
+   *
+   * @param srcToken - Source token
+   * @param destToken - Destination token
+   * @returns true if exactly one token is USDC, false otherwise
+   */
+  private validateExactlyOneUSDC(srcToken: Token, destToken: Token): boolean {
+    const isSrcTokenUSDC = this.isTokenUSDC(srcToken);
+    const isDestTokenUSDC = this.isTokenUSDC(destToken);
+
+    // XOR: exactly one must be USDC
+    const exactlyOneUSDC = isSrcTokenUSDC !== isDestTokenUSDC;
+
+    if (!exactlyOneUSDC) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .debug(
+          `${this.dexKey}: Invalid USDC pair - srcToken: ${
+            srcToken.symbol || srcToken.address
+          } (USDC: ${isSrcTokenUSDC}), destToken: ${
+            destToken.symbol || destToken.address
+          } (USDC: ${isDestTokenUSDC})`,
+        );
+    }
+
+    return exactlyOneUSDC;
+  }
+
+  /**
+   * Validates if a token pair is valid for Renegade trading.
+   *
+   * Renegade-specific requirements:
+   * - Exactly one token must be USDC
+   * - Tokens cannot be the same
+   * - Both tokens must exist in the network
+   * - USDC address must be configured for the network
+   *
+   * @param srcToken - Source token
+   * @param destToken - Destination token
+   * @returns true if pair is valid for Renegade, false otherwise
+   */
+  private isValidRenegadePair(srcToken: Token, destToken: Token): boolean {
+    // Check if tokens are the same
+    if (srcToken.address.toLowerCase() === destToken.address.toLowerCase()) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .debug(`${this.dexKey}: Same token addresses - ${srcToken.address}`);
+      return false;
+    }
+
+    // Check if exactly one token is USDC
+    if (!this.validateExactlyOneUSDC(srcToken, destToken)) {
+      return false;
+    }
+
+    this.dexHelper
+      .getLogger(this.dexKey)
+      .debug(
+        `${this.dexKey}: Valid Renegade pair - ${
+          srcToken.symbol || srcToken.address
+        }/${destToken.symbol || destToken.address}`,
+      );
+
+    return true;
+  }
+
+  // ========================================
+  // |        DATA PROCESSING HELPERS        |
+  // ========================================
+
+  /**
+   * Finds pair data in Renegade levels response (bidirectional lookup).
+   *
+   * Renegade-specific behavior:
+   * - Checks both directions (src/dest and dest/src)
+   * - API might return pair in either direction
+   * - Returns first match found
+   * - Validates pair data structure (bids/asks arrays)
+   *
+   * @param levels - Levels response from Renegade API
    * @param srcToken - Source token
    * @param destToken - Destination token
    * @returns Pair data if found, null otherwise
@@ -247,28 +440,77 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     srcToken: Token,
     destToken: Token,
   ): RenegadePairData | null {
-    // Renegade pair identifiers follow format: baseToken/quoteToken
-    // where USDC is always the quote token
-    const usdcAddresses = [
-      '0xaf88d065e77c8cc2239327c5edb3a432268e5831', // Arbitrum USDC
-      '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', // Base USDC
-    ];
+    // Try both directions for the pair
+    const pairId1 = this.getRenegadePairIdentifier(
+      srcToken.address,
+      destToken.address,
+    );
+    const pairId2 = this.getRenegadePairIdentifier(
+      destToken.address,
+      srcToken.address,
+    );
 
-    const srcIsUsdc = usdcAddresses.includes(srcToken.address.toLowerCase());
-    const destIsUsdc = usdcAddresses.includes(destToken.address.toLowerCase());
-
-    if (srcIsUsdc === destIsUsdc) {
-      return null; // Invalid pair - both or neither are USDC
+    const pairData = levels[pairId1] || levels[pairId2];
+    if (!pairData) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .debug(
+          `${this.dexKey}: No pair data found for ${
+            srcToken.symbol || srcToken.address
+          }/${destToken.symbol || destToken.address}`,
+        );
+      return null;
     }
 
-    // Determine base and quote tokens
-    const baseToken = srcIsUsdc ? destToken : srcToken;
-    const quoteToken = srcIsUsdc ? srcToken : destToken;
+    // Validate pair data structure
+    if (
+      !pairData.bids ||
+      !pairData.asks ||
+      !Array.isArray(pairData.bids) ||
+      !Array.isArray(pairData.asks)
+    ) {
+      this.dexHelper
+        .getLogger(this.dexKey)
+        .warn(
+          `${this.dexKey}: Invalid pair data structure for ${
+            pairId1 || pairId2
+          }`,
+        );
+      return null;
+    }
 
-    // Create pair identifier in Renegade format
-    const pairIdentifier = `${baseToken.address.toLowerCase()}/${quoteToken.address.toLowerCase()}`;
+    this.dexHelper
+      .getLogger(this.dexKey)
+      .debug(`${this.dexKey}: Found pair data for ${pairId1 || pairId2}`);
 
-    return levels[pairIdentifier] || null;
+    return pairData;
+  }
+  // ========================================
+  // |       CONFLICT RESOLUTION HELPERS     |
+  // ========================================
+
+  /**
+   * Gets the USDC address for the current network.
+   *
+   * @param network - Network to get USDC address for
+   * @returns USDC address
+   */
+  getUSDCAddress(network: Network): string {
+    return RenegadeConfig['Renegade'][network].usdcAddress;
+  }
+
+  /**
+   * Generate Renegade pair identifier for API lookup.
+   *
+   * Renegade uses pair identifiers in format: `${tokenA}/${tokenB}`
+   * This method creates the identifier for API calls.
+   *
+   * @param tokenA - First token address
+   * @param tokenB - Second token address
+   * @returns Renegade pair identifier
+   */
+  private getRenegadePairIdentifier(tokenA: Address, tokenB: Address): string {
+    return `${tokenA.toLowerCase()}/${tokenB.toLowerCase()}`;
   }
 
   /**

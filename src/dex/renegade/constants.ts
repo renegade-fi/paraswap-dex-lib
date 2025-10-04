@@ -51,9 +51,3 @@ export const REQUEST_SIGNATURE_DURATION_MS = 10 * 1000; // 10 seconds
 
 // Gas cost estimation
 export const RENEGADE_GAS_COST = 150000; // Estimated gas cost for Renegade swaps
-
-// USDC token addresses by network (Renegade requirement: exactly one token must be USDC)
-export const USDC_ADDRESSES: { [network: number]: string } = {
-  [Network.ARBITRUM]: '0xaf88d065e77c8cc2239327c5edb3a432268e5831',
-  [Network.BASE]: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-};
