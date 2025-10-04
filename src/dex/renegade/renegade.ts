@@ -179,49 +179,29 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     const quoteToken = pairContext.quoteToken;
     const srcIsBase = pairContext.srcIsBase;
 
-    const baseUnit = new BigNumber(10).pow(baseToken.decimals);
-    const quoteUnit = new BigNumber(10).pow(quoteToken.decimals);
-
-    const computeBaseDecimalFromAtomic = (value: bigint) =>
-      new BigNumber(value.toString()).dividedBy(baseUnit);
-    const computeQuoteDecimalFromAtomic = (value: bigint) =>
-      new BigNumber(value.toString()).dividedBy(quoteUnit);
-
     const prices = amounts.map(amount => {
       // v0 implementation: assume the midpoint level has enough size and ignore partial fill calculations.
       if (srcIsBase) {
         if (side === SwapSide.SELL) {
-          const baseDecimal = computeBaseDecimalFromAtomic(amount);
+          const baseDecimal = convertToDecimal(amount, baseToken.decimals);
           const quoteDecimal = baseDecimal.multipliedBy(price);
-          const quoteAtomic = quoteDecimal
-            .multipliedBy(quoteUnit)
-            .decimalPlaces(0, BigNumber.ROUND_FLOOR);
-          return BigInt(quoteAtomic.toFixed(0));
+          return convertFromDecimal(quoteDecimal, quoteToken.decimals);
         }
 
-        const quoteDecimal = computeQuoteDecimalFromAtomic(amount);
+        const quoteDecimal = convertToDecimal(amount, quoteToken.decimals);
         const baseDecimal = quoteDecimal.dividedBy(price);
-        const baseAtomic = baseDecimal
-          .multipliedBy(baseUnit)
-          .decimalPlaces(0, BigNumber.ROUND_CEIL);
-        return BigInt(baseAtomic.toFixed(0));
+        return convertFromDecimal(baseDecimal, baseToken.decimals);
       }
 
       if (side === SwapSide.SELL) {
-        const quoteDecimal = computeQuoteDecimalFromAtomic(amount);
+        const quoteDecimal = convertToDecimal(amount, quoteToken.decimals);
         const baseDecimal = quoteDecimal.dividedBy(price);
-        const baseAtomic = baseDecimal
-          .multipliedBy(baseUnit)
-          .decimalPlaces(0, BigNumber.ROUND_FLOOR);
-        return BigInt(baseAtomic.toFixed(0));
+        return convertFromDecimal(baseDecimal, baseToken.decimals);
       }
 
-      const baseDecimal = computeBaseDecimalFromAtomic(amount);
+      const baseDecimal = convertToDecimal(amount, baseToken.decimals);
       const quoteDecimal = baseDecimal.multipliedBy(price);
-      const quoteAtomic = quoteDecimal
-        .multipliedBy(quoteUnit)
-        .decimalPlaces(0, BigNumber.ROUND_CEIL);
-      return BigInt(quoteAtomic.toFixed(0));
+      return convertFromDecimal(quoteDecimal, quoteToken.decimals);
     });
 
     const unitDecimals =
@@ -341,4 +321,34 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   private _sortTokens(srcAddress: Address, destAddress: Address) {
     return [srcAddress, destAddress].sort((a, b) => (a < b ? -1 : 1));
   }
+}
+
+/**
+ * Converts an atomic amount (smallest token unit) to decimal representation.
+ *
+ * @param amount - The atomic amount as bigint
+ * @param decimals - The number of decimal places for the token
+ * @returns The decimal representation as BigNumber
+ */
+export function convertToDecimal(amount: bigint, decimals: number): BigNumber {
+  const decimalAdjustment = new BigNumber(10).pow(decimals);
+  return new BigNumber(amount.toString()).dividedBy(decimalAdjustment);
+}
+
+/**
+ * Converts a decimal amount to atomic representation (smallest token unit).
+ *
+ * @param amount - The decimal amount as BigNumber
+ * @param decimals - The number of decimal places for the token
+ * @returns The atomic amount as bigint
+ */
+export function convertFromDecimal(
+  amount: BigNumber,
+  decimals: number,
+): bigint {
+  const decimalAdjustment = new BigNumber(10).pow(decimals);
+  const atomicAmount = amount.multipliedBy(decimalAdjustment);
+  return BigInt(
+    atomicAmount.decimalPlaces(0, BigNumber.ROUND_FLOOR).toFixed(0),
+  );
 }
