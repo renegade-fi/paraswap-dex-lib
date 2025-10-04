@@ -1,5 +1,9 @@
 import { Response } from '../../dex-helper/irequest-wrapper';
-import { RenegadePairData, RenegadePriceLevel } from './types';
+import {
+  RenegadePairData,
+  RenegadePriceLevel,
+  RenegadeTokenMetadata,
+} from './types';
 import { Token } from '../../types';
 
 export type RenegadePairContext = {
@@ -108,5 +112,88 @@ export class RenegadeLevelsResponse {
    */
   private getRenegadePairIdentifier(tokenA: string, tokenB: string): string {
     return `${tokenA.toLowerCase()}/${tokenB.toLowerCase()}`;
+  }
+
+  /**
+   * Get all available pair identifiers.
+   *
+   * @returns Array of all pair identifiers
+   */
+  getAllPairs(): string[] {
+    return Object.keys(this.levels);
+  }
+
+  /**
+   * Get all pairs that contain the specified token.
+   *
+   * @param tokenAddress - Token address to search for
+   * @param tokensMap - Token metadata mapping for building Token objects
+   * @returns Array of RenegadePairContext objects
+   */
+  getAllPairsForToken(
+    tokenAddress: string,
+    tokensMap: Record<string, RenegadeTokenMetadata>,
+  ): RenegadePairContext[] {
+    const normalizedTokenAddress = tokenAddress.toLowerCase();
+    const pairs: RenegadePairContext[] = [];
+
+    for (const [pairId, pairData] of Object.entries(this.levels)) {
+      const [baseAddress, quoteAddress] = pairId.split('/');
+
+      const isBase = baseAddress.toLowerCase() === normalizedTokenAddress;
+      const isQuote = quoteAddress.toLowerCase() === normalizedTokenAddress;
+
+      if (!isBase && !isQuote) continue;
+
+      // Get token metadata
+      const baseMetadata = tokensMap[baseAddress.toLowerCase()];
+      const quoteMetadata = tokensMap[quoteAddress.toLowerCase()];
+
+      if (!baseMetadata || !quoteMetadata) continue;
+
+      // Build Token objects
+      const baseToken: Token = {
+        address: baseMetadata.address,
+        decimals: baseMetadata.decimals,
+        symbol: baseMetadata.ticker,
+      };
+
+      const quoteToken: Token = {
+        address: quoteMetadata.address,
+        decimals: quoteMetadata.decimals,
+        symbol: quoteMetadata.ticker,
+      };
+
+      pairs.push({
+        pairId,
+        baseToken,
+        quoteToken,
+        pairData,
+        srcIsBase: isBase,
+      });
+    }
+
+    return pairs;
+  }
+
+  /**
+   * Get token metadata for a given address.
+   *
+   * @param address - Token address
+   * @param tokensMap - Token metadata mapping
+   * @returns Token object or null if not found
+   */
+  getTokenMetadata(
+    address: string,
+    tokensMap: Record<string, RenegadeTokenMetadata>,
+  ): Token | null {
+    const metadata = tokensMap[address.toLowerCase()];
+    if (!metadata) return null;
+
+    return {
+      address: metadata.address,
+      decimals: metadata.decimals,
+      symbol: metadata.ticker,
+    };
   }
 }

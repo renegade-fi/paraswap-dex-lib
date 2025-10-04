@@ -19,7 +19,8 @@ import {
 } from '../../types';
 import { SimpleExchange } from '../simple-exchange';
 import { RateFetcher } from './rate-fetcher';
-import { RenegadeRateFetcherConfig } from './types';
+import { TokenMetadataFetcher } from './token-metadata-fetcher';
+import { RenegadeRateFetcherConfig, RenegadeTokenMetadata } from './types';
 import { RenegadeConfig } from './config';
 import { RENEGADE_GAS_COST } from './constants';
 
@@ -38,6 +39,8 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   ];
 
   private rateFetcher: RateFetcher;
+  private tokenMetadataFetcher: TokenMetadataFetcher;
+  private tokensMap: Record<string, RenegadeTokenMetadata> = {};
 
   logger: Logger;
 
@@ -76,16 +79,65 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       this.logger,
       rateFetcherConfig,
     );
+
+    this.tokenMetadataFetcher = new TokenMetadataFetcher(
+      this.dexHelper,
+      this.dexKey,
+      this.network,
+      this.logger,
+    );
   }
 
   async initializePricing(blockNumber: number): Promise<void> {
-    // TODO: Implement pricing initialization
     this.logger.info('Initializing Renegade pricing...');
+    await this.setTokensMap();
   }
 
   async updatePoolState(): Promise<void> {
-    // TODO: Implement pool state update
     this.logger.info('Updating Renegade pool state...');
+    await this.setTokensMap();
+  }
+
+  /**
+   * Set token metadata map from GitHub.
+   */
+  async setTokensMap(): Promise<void> {
+    const metadata = await this.tokenMetadataFetcher.fetchTokenMetadata();
+    if (metadata) {
+      this.tokensMap = metadata;
+      this.logger.info(
+        `Successfully fetched ${
+          Object.keys(metadata).length
+        } token metadata entries`,
+      );
+    } else {
+      this.logger.warn('Failed to fetch token metadata from GitHub');
+    }
+  }
+
+  /**
+   * Fetch and cache token metadata from GitHub.
+   *
+   * @returns Promise resolving to true if successful, false otherwise
+   * @deprecated Use setTokensMap() instead to follow standard pattern
+   */
+  async fetchTokenMetadata(): Promise<boolean> {
+    try {
+      const metadata = await this.tokenMetadataFetcher.fetchTokenMetadata();
+      if (metadata) {
+        this.tokensMap = metadata;
+        this.logger.info(
+          `Successfully fetched ${
+            Object.keys(metadata).length
+          } token metadata entries`,
+        );
+        return true;
+      }
+      return false;
+    } catch (error) {
+      this.logger.error('Failed to fetch token metadata:', error);
+      return false;
+    }
   }
 
   /**
@@ -227,9 +279,90 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     tokenAddress: Address,
     limit: number,
   ): Promise<PoolLiquidity[]> {
-    // TODO: Implement top pools retrieval
-    this.logger.info(`Getting top pools for token ${tokenAddress}`);
-    return [];
+    try {
+      // Fetch current price levels
+      const levels = await this.rateFetcher.fetchLevels();
+      if (!levels) {
+        this.logger.warn(`No price levels available for token ${tokenAddress}`);
+        return [];
+      }
+
+      // Check if we have token metadata (should be initialized in initializePricing)
+      if (Object.keys(this.tokensMap).length === 0) {
+        this.logger.warn(
+          `Token metadata not initialized for token ${tokenAddress}`,
+        );
+        return [];
+      }
+
+      // Get all pairs containing this token
+      const relevantPairs = levels.getAllPairsForToken(
+        tokenAddress,
+        this.tokensMap,
+      );
+      if (relevantPairs.length === 0) {
+        this.logger.debug(`No pairs found for token ${tokenAddress}`);
+        return [];
+      }
+
+      // Calculate liquidity for each pair
+      const connectorPools: Record<string, PoolLiquidity> = {};
+      const settlementAddress =
+        RenegadeConfig['Renegade'][this.network].settlementAddress;
+
+      for (const pairContext of relevantPairs) {
+        const isBase = pairContext.srcIsBase;
+        const levels = isBase
+          ? pairContext.pairData.bids
+          : pairContext.pairData.asks;
+
+        // Sum up USD notional sizes (size field is already USD!)
+        const liquidityUSD = levels.reduce((acc, [price, size]) => {
+          return acc + parseFloat(size);
+        }, 0);
+
+        if (liquidityUSD > 0) {
+          const connectorToken = isBase
+            ? pairContext.quoteToken
+            : pairContext.baseToken;
+          const poolId = connectorToken.address.toLowerCase();
+
+          if (connectorPools[poolId]) {
+            // Aggregate liquidity if we have multiple pairs with same connector
+            connectorPools[poolId].liquidityUSD += liquidityUSD;
+          } else {
+            connectorPools[poolId] = {
+              exchange: this.dexKey,
+              address: settlementAddress,
+              connectorTokens: [connectorToken],
+              liquidityUSD,
+            };
+          }
+        }
+      }
+
+      // Sort by liquidity and apply limit
+      const pools = Object.values(connectorPools)
+        .sort((a, b) => b.liquidityUSD - a.liquidityUSD)
+        .slice(0, limit);
+
+      this.logger.debug(
+        `Found ${
+          pools.length
+        } pools for token ${tokenAddress} with total liquidity ${pools.reduce(
+          (acc, p) => acc + p.liquidityUSD,
+          0,
+        )} USD`,
+      );
+
+      return pools;
+    } catch (error) {
+      this.logger.error(
+        `Error getting top pools for token ${tokenAddress}:`,
+        error,
+      );
+      return [];
+    }
   }
 
   getAdapterParam(

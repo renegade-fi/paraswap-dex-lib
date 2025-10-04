@@ -26,6 +26,28 @@ export type RenegadeRateFetcherConfig = {
   // };
 };
 
+// Minimal token metadata for getTopPoolsForToken (YAGNI)
+export type RenegadeTokenMetadata = {
+  address: string;
+  decimals: number;
+  ticker: string;
+};
+
+// Full token metadata structure from Renegade token mappings
+export type RenegadeTokenInfo = {
+  name: string;
+  ticker: string;
+  address: string;
+  decimals: number;
+  supported_exchanges: Record<string, string>;
+  canonical_exchange: string;
+};
+
+// Token remap structure from Renegade API
+export type RenegadeTokenRemap = {
+  tokens: RenegadeTokenInfo[];
+};
+
 // Data structure for DEX methods
 export type RenegadeData = {};
 
@@ -33,4 +55,5 @@ export type RenegadeData = {};
 export type DexParams = {
   usdcAddress: string;
   chainName: string;
+  settlementAddress: string;
 };

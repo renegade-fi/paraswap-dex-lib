@@ -51,3 +51,8 @@ export const REQUEST_SIGNATURE_DURATION_MS = 10 * 1000; // 10 seconds
 
 // Gas cost estimation
 export const RENEGADE_GAS_COST = 150000; // Estimated gas cost for Renegade swaps
+
+// Token metadata API constants
+export const RENEGADE_TOKEN_MAPPINGS_BASE_URL =
+  'https://raw.githubusercontent.com/renegade-fi/token-mappings/main/';
+export const RENEGADE_TOKEN_MAPPINGS_TIMEOUT_MS = 10000; // 10 seconds

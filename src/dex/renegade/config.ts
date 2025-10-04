@@ -7,10 +7,12 @@ export const RenegadeConfig: DexConfigMap<DexParams> = {
     [Network.ARBITRUM]: {
       usdcAddress: '0xaf88d065e77c8cc2239327c5edb3a432268e5831', // USDC
       chainName: 'arbitrum-one',
+      settlementAddress: '0x1000000000000000000000000000000000000000', // PLACEHOLDER
     },
     [Network.BASE]: {
       usdcAddress: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', // USDbC (USDC on Base)
       chainName: 'base-mainnet',
+      settlementAddress: '0x1000000000000000000000000000000000000000', // PLACEHOLDER
     },
   },
 };
