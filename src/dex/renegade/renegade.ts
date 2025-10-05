@@ -19,7 +19,6 @@ import {
 } from '../../types';
 import { SimpleExchange } from '../simple-exchange';
 import { RateFetcher } from './rate-fetcher';
-import { TokenMetadataFetcher } from './token-metadata-fetcher';
 import { RenegadeLevelsResponse } from './renegade-levels-response';
 import {
   RenegadeRateFetcherConfig,
@@ -34,7 +33,6 @@ import {
   RENEGADE_LEVELS_POLLING_INTERVAL,
   RENEGADE_TOKEN_METADATA_CACHE_KEY,
   RENEGADE_TOKEN_METADATA_CACHE_TTL,
-  RENEGADE_TOKEN_METADATA_POLLING_INTERVAL,
 } from './constants';
 
 // Placeholder types - these will need to be properly defined
@@ -53,7 +51,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   ];
 
   private rateFetcher: RateFetcher;
-  private tokenMetadataFetcher: TokenMetadataFetcher;
   private tokensMap: Record<string, RenegadeTokenMetadata> = {};
 
   logger: Logger;
@@ -86,6 +83,8 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       apiSecret,
       levelsCacheKey: RENEGADE_LEVELS_CACHE_KEY,
       levelsCacheTTL: RENEGADE_LEVELS_CACHE_TTL,
+      tokenMetadataCacheKey: RENEGADE_TOKEN_METADATA_CACHE_KEY,
+      tokenMetadataCacheTTL: RENEGADE_TOKEN_METADATA_CACHE_TTL,
     };
 
     this.rateFetcher = new RateFetcher(
@@ -94,13 +93,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       this.network,
       this.logger,
       rateFetcherConfig,
-    );
-
-    this.tokenMetadataFetcher = new TokenMetadataFetcher(
-      this.dexHelper,
-      this.dexKey,
-      this.network,
-      this.logger,
     );
   }
 
@@ -120,19 +112,31 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   }
 
   /**
-   * Set token metadata map from GitHub.
+   * Set token metadata map from cache or fetch if not available.
    */
   async setTokensMap(): Promise<void> {
-    const metadata = await this.tokenMetadataFetcher.fetchTokenMetadata();
+    // Try to get from cache first
+    let metadata = await this.getCachedTokenMetadata();
+
+    if (!metadata) {
+      // If not in cache, fetch once
+      this.logger.info('Token metadata not in cache, fetching once...');
+      const success = await this.rateFetcher.fetchTokenMetadataOnce();
+      if (success) {
+        // Try cache again after fetch
+        metadata = await this.getCachedTokenMetadata();
+      }
+    }
+
     if (metadata) {
       this.tokensMap = metadata;
       this.logger.info(
-        `Successfully fetched ${
+        `Successfully loaded ${
           Object.keys(metadata).length
         } token metadata entries`,
       );
     } else {
-      this.logger.warn('Failed to fetch token metadata from GitHub');
+      this.logger.warn('Failed to fetch token metadata');
     }
   }
 
@@ -161,28 +165,26 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   }
 
   /**
-   * Fetch and cache token metadata from GitHub.
+   * Get cached token metadata from persistent cache.
    *
-   * @returns Promise resolving to true if successful, false otherwise
-   * @deprecated Use setTokensMap() instead to follow standard pattern
+   * @returns Promise resolving to token metadata mapping or null if not available
    */
-  async fetchTokenMetadata(): Promise<boolean> {
-    try {
-      const metadata = await this.tokenMetadataFetcher.fetchTokenMetadata();
-      if (metadata) {
-        this.tokensMap = metadata;
-        this.logger.info(
-          `Successfully fetched ${
-            Object.keys(metadata).length
-          } token metadata entries`,
-        );
-        return true;
-      }
-      return false;
-    } catch (error) {
-      this.logger.error('Failed to fetch token metadata:', error);
-      return false;
+  async getCachedTokenMetadata(): Promise<Record<
+    string,
+    RenegadeTokenMetadata
+  > | null> {
+    const cachedTokens = await this.dexHelper.cache.getAndCacheLocally(
+      this.dexKey,
+      this.network,
+      RENEGADE_TOKEN_METADATA_CACHE_KEY,
+      RENEGADE_TOKEN_METADATA_CACHE_TTL,
+    );
+
+    if (cachedTokens) {
+      return JSON.parse(cachedTokens) as Record<string, RenegadeTokenMetadata>;
     }
+
+    return null;
   }
 
   /**

@@ -20,6 +20,8 @@ export type RenegadeRateFetcherConfig = {
   apiSecret: string;
   levelsCacheKey: string;
   levelsCacheTTL: number;
+  tokenMetadataCacheKey: string;
+  tokenMetadataCacheTTL: number;
 };
 
 // Minimal token metadata for getTopPoolsForToken (YAGNI)
