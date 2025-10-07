@@ -23,12 +23,12 @@ import {
 import { SimpleExchange } from '../simple-exchange';
 import { RateFetcher } from './rate-fetcher';
 import { RenegadeLevelsResponse } from './renegade-levels-response';
+import { RenegadeClient } from './renegade-client';
 import {
   RenegadeRateFetcherConfig,
   RenegadeTokenMetadata,
   RenegadePairData,
   RenegadeData,
-  RenegadeMatchResponse,
 } from './types';
 import { RenegadeConfig } from './config';
 import {
@@ -38,11 +38,7 @@ import {
   RENEGADE_LEVELS_POLLING_INTERVAL,
   RENEGADE_TOKEN_METADATA_CACHE_KEY,
   RENEGADE_TOKEN_METADATA_CACHE_TTL,
-  RENEGADE_API_TIMEOUT_MS,
-  RENEGADE_MATCH_ENDPOINT,
-  buildRenegadeApiUrl,
 } from './constants';
-import { generateRenegadeAuthHeaders } from './auth-helper';
 
 export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   readonly hasConstantPriceLargeAmounts = false;
@@ -55,6 +51,7 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   ];
 
   private rateFetcher: RateFetcher;
+  private renegadeClient: RenegadeClient;
   private tokensMap: Record<string, RenegadeTokenMetadata> = {};
   private readonly settlementAddress: string;
   private readonly apiKey: string;
@@ -105,6 +102,14 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       this.network,
       this.logger,
       rateFetcherConfig,
+    );
+
+    this.renegadeClient = new RenegadeClient(
+      this.dexHelper,
+      this.network,
+      this.apiKey,
+      this.apiSecret,
+      this.logger,
     );
   }
 
@@ -547,32 +552,10 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       min_fill_size: minFillSize,
     };
 
-    const requestBody = {
-      external_order: externalOrder,
-      receiver_address: options.recipient,
-    };
-
-    const baseUrl = buildRenegadeApiUrl(this.network);
-    const matchUrl = `${baseUrl}${RENEGADE_MATCH_ENDPOINT}`;
-
-    const headers = generateRenegadeAuthHeaders(
-      `${RENEGADE_MATCH_ENDPOINT}?disable_gas_sponsorship=true`,
-      JSON.stringify(requestBody),
-      {
-        'content-type': 'application/json',
-        accept: 'application/json;number=string',
-      },
-      this.apiKey,
-      this.apiSecret,
+    const response = await this.renegadeClient.requestExternalMatch(
+      externalOrder,
+      options.recipient,
     );
-
-    const response: RenegadeMatchResponse =
-      await this.dexHelper.httpRequest.post(
-        matchUrl + '?disable_gas_sponsorship=true',
-        requestBody,
-        RENEGADE_API_TIMEOUT_MS,
-        headers,
-      );
 
     const settlementTx = response?.match_bundle?.settlement_tx;
 
