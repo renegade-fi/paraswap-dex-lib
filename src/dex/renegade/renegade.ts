@@ -9,10 +9,13 @@ import {
   Address,
   DexExchangeParam,
   ExchangePrices,
+  ExchangeTxInfo,
   Logger,
   NumberAsString,
+  OptimalSwapExchange,
   PoolLiquidity,
   PoolPrices,
+  PreprocessTransactionOptions,
   SimpleExchangeParam,
   Token,
   TransferFeeParams,
@@ -24,6 +27,8 @@ import {
   RenegadeRateFetcherConfig,
   RenegadeTokenMetadata,
   RenegadePairData,
+  RenegadeData,
+  RenegadeMatchResponse,
 } from './types';
 import { RenegadeConfig } from './config';
 import {
@@ -33,16 +38,15 @@ import {
   RENEGADE_LEVELS_POLLING_INTERVAL,
   RENEGADE_TOKEN_METADATA_CACHE_KEY,
   RENEGADE_TOKEN_METADATA_CACHE_TTL,
+  RENEGADE_API_TIMEOUT_MS,
+  RENEGADE_MATCH_ENDPOINT,
+  buildRenegadeApiUrl,
 } from './constants';
-
-// Placeholder types - these will need to be properly defined
-export interface RenegadeData {
-  // Define the data structure for Renegade pools/swaps
-}
+import { generateRenegadeAuthHeaders } from './auth-helper';
 
 export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   readonly hasConstantPriceLargeAmounts = false;
-  readonly needWrapNative = true;
+  readonly needWrapNative = false;
   readonly isFeeOnTransferSupported = false;
   readonly isStatePollingDex = true;
 
@@ -52,6 +56,9 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
 
   private rateFetcher: RateFetcher;
   private tokensMap: Record<string, RenegadeTokenMetadata> = {};
+  private readonly settlementAddress: string;
+  private readonly apiKey: string;
+  private readonly apiSecret: string;
 
   logger: Logger;
 
@@ -78,6 +85,11 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     );
 
     // Initialize rate fetcher with credentials and caching config
+    this.apiKey = apiKey;
+    this.apiSecret = apiSecret;
+    this.settlementAddress =
+      RenegadeConfig['Renegade'][this.network].settlementAddress;
+
     const rateFetcherConfig: RenegadeRateFetcherConfig = {
       apiKey,
       apiSecret,
@@ -97,7 +109,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   }
 
   async initializePricing(blockNumber: number): Promise<void> {
-    this.logger.info('Initializing Renegade pricing...');
     await this.setTokensMap();
 
     // Start polling for price levels if not in slave mode
@@ -107,7 +118,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   }
 
   async updatePoolState(): Promise<void> {
-    this.logger.info('Updating Renegade pool state...');
     await this.setTokensMap();
   }
 
@@ -120,7 +130,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
 
     if (!metadata) {
       // If not in cache, fetch once
-      this.logger.info('Token metadata not in cache, fetching once...');
       const success = await this.rateFetcher.fetchTokenMetadataOnce();
       if (success) {
         // Try cache again after fetch
@@ -130,11 +139,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
 
     if (metadata) {
       this.tokensMap = metadata;
-      this.logger.info(
-        `Successfully loaded ${
-          Object.keys(metadata).length
-        } token metadata entries`,
-      );
     } else {
       this.logger.warn('Failed to fetch token metadata');
     }
@@ -310,6 +314,15 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       destToken.address,
     );
 
+    this.logger.debug(`${this.dexKey}-${this.network}: getPricesVolume`, {
+      prices,
+      unit: BigInt(unitDecimals),
+      data: {},
+      poolIdentifiers: [poolIdentifier],
+      exchange: this.dexKey,
+      gasCost: RENEGADE_GAS_COST,
+    });
+
     return [
       {
         prices,
@@ -348,7 +361,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
         this.tokensMap,
       );
       if (relevantPairs.length === 0) {
-        this.logger.debug(`No pairs found for token ${tokenAddress}`);
         return [];
       }
 
@@ -396,15 +408,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
         .sort((a, b) => b.liquidityUSD - a.liquidityUSD)
         .slice(0, limit);
 
-      this.logger.debug(
-        `Found ${
-          pools.length
-        } pools for token ${tokenAddress} with total liquidity ${pools.reduce(
-          (acc, p) => acc + p.liquidityUSD,
-          0,
-        )} USD`,
-      );
-
       return pools;
     } catch (error) {
       this.logger.error(
@@ -423,8 +426,21 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     data: RenegadeData,
     side: SwapSide,
   ): AdapterExchangeParam {
-    // TODO: Implement adapter parameters
-    throw new Error('Not implemented');
+    const settlementTx = data?.settlementTx;
+
+    assert(
+      settlementTx !== undefined && settlementTx.data !== undefined,
+      `${this.dexKey}-${this.network}: settlementTx missing from data`,
+    );
+
+    const targetExchange =
+      settlementTx.to !== undefined ? settlementTx.to : this.settlementAddress;
+
+    return {
+      targetExchange,
+      payload: settlementTx.data,
+      networkFee: settlementTx.value ?? '0',
+    };
   }
 
   async getSimpleParam(
@@ -448,8 +464,132 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     data: RenegadeData,
     side: SwapSide,
   ): DexExchangeParam {
-    // TODO: Implement DEX parameters
-    throw new Error('Not implemented');
+    const settlementTx = data?.settlementTx;
+
+    assert(
+      settlementTx !== undefined && settlementTx.data !== undefined,
+      `${this.dexKey}-${this.network}: settlementTx missing from data`,
+    );
+
+    const targetExchange =
+      settlementTx.to !== undefined ? settlementTx.to : this.settlementAddress;
+
+    return {
+      needWrapNative: this.needWrapNative,
+      dexFuncHasRecipient: false,
+      exchangeData: settlementTx.data,
+      targetExchange,
+      returnAmountPos: undefined,
+      specialDexSupportsInsertFromAmount: false,
+    };
+  }
+
+  async preProcessTransaction(
+    optimalSwapExchange: OptimalSwapExchange<RenegadeData>,
+    srcToken: Token,
+    destToken: Token,
+    side: SwapSide,
+    options: PreprocessTransactionOptions,
+  ): Promise<[OptimalSwapExchange<RenegadeData>, ExchangeTxInfo]> {
+    const usdcAddress = this.getUSDCAddress(this.network).toLowerCase();
+    const srcIsUSDC = srcToken.address.toLowerCase() === usdcAddress;
+    const destIsUSDC = destToken.address.toLowerCase() === usdcAddress;
+
+    assert(
+      srcIsUSDC !== destIsUSDC,
+      `${this.dexKey}-${this.network}: Unsupported pair for RFQ`,
+    );
+
+    const baseToken = srcIsUSDC ? destToken : srcToken;
+    const quoteToken = srcIsUSDC ? srcToken : destToken;
+
+    const orderSide: 'Buy' | 'Sell' = srcIsUSDC ? 'Buy' : 'Sell';
+
+    const baseAmountZero = '0';
+    const quoteAmountZero = '0';
+
+    let baseAmount = baseAmountZero;
+    let quoteAmount = quoteAmountZero;
+    let exactBaseOutput = baseAmountZero;
+    let exactQuoteOutput = quoteAmountZero;
+    let minFillSize = '0';
+
+    const srcAmount = optimalSwapExchange.srcAmount;
+    const destAmount = optimalSwapExchange.destAmount;
+
+    if (orderSide === 'Sell') {
+      if (side === SwapSide.SELL) {
+        // baseAmount = srcAmount;
+        // minFillSize = baseAmount;
+        // TODO: set exactQuoteOutput (exactDestOutput) that contract expects
+        exactQuoteOutput = destAmount;
+      } else {
+        exactQuoteOutput = destAmount;
+      }
+    } else {
+      if (side === SwapSide.SELL) {
+        // quoteAmount = srcAmount;
+        // minFillSize = quoteAmount;
+        exactBaseOutput = destAmount;
+      } else {
+        exactBaseOutput = destAmount;
+      }
+    }
+
+    const externalOrder = {
+      quote_mint: quoteToken.address,
+      base_mint: baseToken.address,
+      side: orderSide,
+      base_amount: baseAmount,
+      quote_amount: quoteAmount,
+      exact_base_output: exactBaseOutput,
+      exact_quote_output: exactQuoteOutput,
+      min_fill_size: minFillSize,
+    };
+
+    const requestBody = {
+      external_order: externalOrder,
+      receiver_address: options.recipient,
+    };
+
+    const baseUrl = buildRenegadeApiUrl(this.network);
+    const matchUrl = `${baseUrl}${RENEGADE_MATCH_ENDPOINT}`;
+
+    const headers = generateRenegadeAuthHeaders(
+      `${RENEGADE_MATCH_ENDPOINT}?disable_gas_sponsorship=true`,
+      JSON.stringify(requestBody),
+      {
+        'content-type': 'application/json',
+        accept: 'application/json;number=string',
+      },
+      this.apiKey,
+      this.apiSecret,
+    );
+
+    const response: RenegadeMatchResponse =
+      await this.dexHelper.httpRequest.post(
+        matchUrl + '?disable_gas_sponsorship=true',
+        requestBody,
+        RENEGADE_API_TIMEOUT_MS,
+        headers,
+      );
+
+    const settlementTx = response?.match_bundle?.settlement_tx;
+
+    assert(
+      settlementTx !== undefined && settlementTx.data !== undefined,
+      `${this.dexKey}-${this.network}: Invalid RFQ response`,
+    );
+
+    const enrichedExchange: OptimalSwapExchange<RenegadeData> = {
+      ...optimalSwapExchange,
+      data: {
+        settlementTx,
+        rawResponse: response,
+      },
+    };
+
+    return [enrichedExchange, {}];
   }
 
   getCalldataGasCost(poolPrices: PoolPrices<RenegadeData>): number | number[] {
@@ -463,10 +603,27 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   }
 
   async releaseResources(): Promise<void> {
-    this.logger.info('Releasing Renegade resources...');
     if (!this.dexHelper.config.isSlave) {
       this.rateFetcher.stop();
     }
+  }
+
+  getTokenFromAddress(address: Address): Token {
+    const tokenMetadata = this.tokensMap[address.toLowerCase()];
+    if (!tokenMetadata) {
+      // Return a basic token object if metadata is not available
+      // This can happen during initialization or for tokens not in the mapping
+      return {
+        address,
+        decimals: 18, // Default to 18 decimals
+        symbol: 'UNKNOWN',
+      };
+    }
+    return {
+      address: tokenMetadata.address,
+      decimals: tokenMetadata.decimals,
+      symbol: tokenMetadata.ticker,
+    };
   }
 
   // Helpers

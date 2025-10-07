@@ -46,8 +46,40 @@ export type RenegadeTokenRemap = {
   tokens: RenegadeTokenInfo[];
 };
 
+export type RenegadeSettlementTx = {
+  to?: string;
+  data?: string;
+  value?: string;
+  gas?: string;
+  gasPrice?: string;
+  maxFeePerGas?: string;
+  maxPriorityFeePerGas?: string;
+  nonce?: string;
+  chainId?: string;
+  type?: string;
+};
+
+export type RenegadeMatchBundle = {
+  settlement_tx: RenegadeSettlementTx;
+  match_result?: {
+    quote_mint: string;
+    base_mint: string;
+    quote_amount: string;
+    base_amount: string;
+    direction: 'Buy' | 'Sell';
+  };
+};
+
+export type RenegadeMatchResponse = {
+  match_bundle: RenegadeMatchBundle;
+  is_sponsored?: boolean;
+};
+
 // Data structure for DEX methods
-export type RenegadeData = {};
+export type RenegadeData = {
+  settlementTx?: RenegadeSettlementTx;
+  rawResponse?: RenegadeMatchResponse;
+};
 
 // Configuration parameters for Renegade DEX per network
 export type DexParams = {

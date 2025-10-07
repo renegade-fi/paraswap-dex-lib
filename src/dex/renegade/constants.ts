@@ -8,6 +8,8 @@ import { Network } from '../../constants';
 export const RENEGADE_API_URL_TEMPLATE =
   'https://{network}.auth-server.renegade.fi';
 export const RENEGADE_LEVELS_ENDPOINT = '/rfqt/v3/levels';
+export const RENEGADE_MATCH_ENDPOINT =
+  '/v0/matching-engine/request-external-match';
 
 // Network to Renegade subdomain mapping
 export const RENEGADE_NETWORK_MAPPING: { [key in Network]?: string } = {

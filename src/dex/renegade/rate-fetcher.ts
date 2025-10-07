@@ -181,10 +181,6 @@ export class RateFetcher {
       this.config.levelsCacheTTL,
       JSON.stringify(rawData), // Serialize the raw pair data
     );
-
-    this.logger.debug(
-      `${this.dexKey}: Successfully cached ${pairCount} price level pairs`,
-    );
   }
 
   /**
@@ -215,10 +211,6 @@ export class RateFetcher {
       this.config.tokenMetadataCacheTTL,
       JSON.stringify(tokensMap),
     );
-
-    this.logger.debug(
-      `${this.dexKey}: Successfully cached ${tokenCount} token metadata entries`,
-    );
   }
 
   /**
@@ -229,8 +221,6 @@ export class RateFetcher {
    */
   async fetchTokenMetadataOnce(): Promise<boolean> {
     try {
-      this.logger.debug(`${this.dexKey}: Fetching token metadata once`);
-
       // Trigger one-time fetch
       await this.tokenMetadataFetcher.fetch(true);
 
