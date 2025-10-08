@@ -10,6 +10,9 @@ export const RENEGADE_API_URL_TEMPLATE =
 export const RENEGADE_LEVELS_ENDPOINT = '/rfqt/v3/levels';
 export const RENEGADE_MATCH_ENDPOINT =
   '/v0/matching-engine/request-external-match';
+export const RENEGADE_QUOTE_ENDPOINT = '/v0/matching-engine/quote';
+export const RENEGADE_ASSEMBLE_ENDPOINT =
+  '/v0/matching-engine/assemble-external-match';
 
 // Network to Renegade subdomain mapping
 export const RENEGADE_NETWORK_MAPPING: { [key in Network]?: string } = {
@@ -56,7 +59,7 @@ export const RENEGADE_AUTH_EXPIRATION_HEADER = 'x-renegade-auth-expiration';
 export const REQUEST_SIGNATURE_DURATION_MS = 10 * 1000; // 10 seconds
 
 // Gas cost estimation
-export const RENEGADE_GAS_COST = 150000; // Estimated gas cost for Renegade swaps
+export const RENEGADE_GAS_COST = 3_000_000; // Estimated gas cost for Renegade swaps
 
 // Token metadata API constants
 export const RENEGADE_TOKEN_MAPPINGS_BASE_URL =

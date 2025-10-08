@@ -59,26 +59,10 @@ export type RenegadeSettlementTx = {
   type?: string;
 };
 
-export type RenegadeMatchBundle = {
-  settlement_tx: RenegadeSettlementTx;
-  match_result?: {
-    quote_mint: string;
-    base_mint: string;
-    quote_amount: string;
-    base_amount: string;
-    direction: 'Buy' | 'Sell';
-  };
-};
-
-export type RenegadeMatchResponse = {
-  match_bundle: RenegadeMatchBundle;
-  is_sponsored?: boolean;
-};
-
 // Data structure for DEX methods
 export type RenegadeData = {
-  settlementTx?: RenegadeSettlementTx;
-  rawResponse?: RenegadeMatchResponse;
+  settlementTx?: TransactionRequest;
+  rawResponse?: SponsoredMatchResponse;
 };
 
 // Configuration parameters for Renegade DEX per network
@@ -86,4 +70,167 @@ export type DexParams = {
   usdcAddress: string;
   chainName: string;
   settlementAddress: string;
+};
+
+// ============================================================================
+// Quote and Assemble Endpoint Types (from OpenAPI spec)
+// ============================================================================
+
+/**
+ * Represents a token transfer with mint address and amount
+ */
+export type ApiExternalAssetTransfer = {
+  mint: string;
+  amount: string;
+};
+
+/**
+ * Match result with quote/base mints, amounts, and direction
+ */
+export type ApiExternalMatchResult = {
+  quote_mint: string;
+  base_mint: string;
+  quote_amount: string;
+  base_amount: string;
+  direction: 'Buy' | 'Sell';
+};
+
+/**
+ * Price with timestamp
+ */
+export type ApiTimestampedPrice = {
+  price: string;
+  timestamp: number;
+};
+
+/**
+ * Relayer and protocol fees
+ */
+export type FeeTake = {
+  relayer_fee: string;
+  protocol_fee: string;
+};
+
+/**
+ * External order structure for Renegade match requests
+ */
+export type ExternalOrder = {
+  quote_mint: string;
+  base_mint: string;
+  side: 'Buy' | 'Sell';
+  base_amount: string;
+  quote_amount: string;
+  exact_base_output: string;
+  exact_quote_output: string;
+  min_fill_size: string;
+};
+
+/**
+ * Complete quote structure with order, match result, fees, and pricing
+ */
+export type ApiExternalQuote = {
+  order: ExternalOrder;
+  match_result: ApiExternalMatchResult;
+  fees: FeeTake;
+  send: ApiExternalAssetTransfer;
+  receive: ApiExternalAssetTransfer;
+  price: ApiTimestampedPrice;
+  timestamp: number;
+};
+
+/**
+ * Quote with signature binding it to the relayer
+ */
+export type SignedExternalQuote = {
+  quote: ApiExternalQuote;
+  signature: string;
+};
+
+/**
+ * Gas refund details
+ */
+export type GasSponsorshipInfo = {
+  refund_amount: string;
+  refund_native_eth: boolean;
+  refund_address: string | null;
+};
+
+/**
+ * Signed gas sponsorship info (deprecated signature field)
+ */
+export type SignedGasSponsorshipInfo = {
+  gas_sponsorship_info: GasSponsorshipInfo;
+  signature: string; // deprecated
+};
+
+/**
+ * Response from quote endpoint
+ */
+export type SponsoredQuoteResponse = {
+  signed_quote: SignedExternalQuote;
+  gas_sponsorship_info?: SignedGasSponsorshipInfo | null;
+};
+
+/**
+ * Ethereum transaction request (alloy-compatible)
+ */
+export type TransactionRequest = {
+  from?: string | null;
+  to?: string | null;
+  gas_price?: string | null;
+  max_fee_per_gas?: string | null;
+  max_priority_fee_per_gas?: string | null;
+  max_fee_per_blob_gas?: string | null;
+  gas?: string | null;
+  value?: string | null;
+  data?: string | null;
+  input?: string | null;
+  nonce?: string | null;
+  chain_id?: string | null;
+  access_list?: any[] | null;
+  type?: string | null;
+  blob_versioned_hashes?: string[] | null;
+  authorization_list?: any[] | null;
+};
+
+/**
+ * Complete match bundle with settlement transaction
+ */
+export type AtomicMatchApiBundle = {
+  match_result: ApiExternalMatchResult;
+  fees: FeeTake;
+  receive: ApiExternalAssetTransfer;
+  send: ApiExternalAssetTransfer;
+  settlement_tx: TransactionRequest;
+};
+
+/**
+ * Response from assemble endpoint
+ */
+export type SponsoredMatchResponse = {
+  match_bundle: AtomicMatchApiBundle;
+  is_sponsored: boolean;
+  gas_sponsorship_info?: GasSponsorshipInfo | null;
+};
+
+/**
+ * Request body for quote endpoint
+ */
+export type ExternalQuoteRequest = {
+  matching_pool?: string;
+  relayer_fee_rate?: number;
+  external_order: ExternalOrder;
+};
+
+/**
+ * Request body for assemble endpoint
+ */
+export type AssembleExternalMatchRequest = {
+  do_gas_estimation?: boolean;
+  allow_shared?: boolean;
+  matching_pool?: string | null;
+  relayer_fee_rate?: number;
+  receiver_address?: string | null;
+  updated_order?: ExternalOrder | null;
+  signed_quote: SignedExternalQuote;
 };

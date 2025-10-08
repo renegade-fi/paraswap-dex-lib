@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -57,10 +56,10 @@ const SLEEP_MS = 5000;
 function testForNetwork(
   network: Network,
   dexKey: string,
-  tokenASymbol: string,
-  tokenBSymbol: string,
-  tokenAAmount: string,
-  tokenBAmount: string,
+  quoteSymbol: string,
+  baseSymbol: string,
+  quoteAmount: string,
+  baseAmount: string,
   nativeTokenAmount: string,
 ) {
   const provider = new StaticJsonRpcProvider(
@@ -83,48 +82,46 @@ function testForNetwork(
       describe(`${side}`, () => {
         contractMethods.forEach((contractMethod: ContractMethod) => {
           describe(`${contractMethod}`, () => {
-            // it(`${nativeTokenSymbol} -> ${tokenASymbol}`, async () => {
-            //   await testE2E(
-            //     tokens[nativeTokenSymbol],
-            //     tokens[tokenASymbol],
-            //     holders[nativeTokenSymbol],
-            //     side === SwapSide.SELL ? nativeTokenAmount : tokenAAmount,
-            //     side,
-            //     dexKey,
-            //     contractMethod,
-            //     network,
-            //     provider,
-            //   );
-            // });
-            // it(`${tokenASymbol} -> ${nativeTokenSymbol}`, async () => {
-            //   await testE2E(
-            //     tokens[tokenASymbol],
-            //     tokens[nativeTokenSymbol],
-            //     holders[tokenASymbol],
-            //     side === SwapSide.SELL ? tokenAAmount : nativeTokenAmount,
-            //     side,
-            //     dexKey,
-            //     contractMethod,
-            //     network,
-            //     provider,
-            //   );
-            // });
-            it(`${tokenASymbol} -> ${tokenBSymbol}`, async () => {
+            it(`${quoteSymbol} -> ${baseSymbol}`, async () => {
               await testE2E(
-                tokens[tokenASymbol],
-                tokens[tokenBSymbol],
-                holders[tokenASymbol],
-                side === SwapSide.SELL ? tokenAAmount : tokenBAmount,
+                tokens[quoteSymbol], // srcToken
+                tokens[baseSymbol], // destToken
+                holders[quoteSymbol], // senderAddress
+                side === SwapSide.SELL ? quoteAmount : baseAmount, // srcToken amount
                 side,
                 dexKey,
                 contractMethod,
                 network,
                 provider,
-                undefined,
-                undefined,
-                undefined,
-                undefined,
+                undefined, // poolIdentifiers
+                undefined, // limitOrderProvider
+                undefined, // transferFees
+                100, // slippage
                 SLEEP_MS,
+                undefined, // replaceTenderlyWithEstimateGas
+                undefined, // forceRoute
+                undefined, // options
+              );
+            });
+            it(`${baseSymbol} -> ${quoteSymbol}`, async () => {
+              await testE2E(
+                tokens[baseSymbol], // srcToken
+                tokens[quoteSymbol], // destToken
+                holders[baseSymbol], // senderAddress
+                side === SwapSide.SELL ? baseAmount : quoteAmount, // srcToken amount
+                side,
+                dexKey,
+                contractMethod,
+                network,
+                provider,
+                undefined, // poolIdentifiers
+                undefined, // limitOrderProvider
+                undefined, // transferFees
+                100, // slippage
+                SLEEP_MS,
+                undefined, // replaceTenderlyWithEstimateGas
+                undefined, // forceRoute
+                undefined, // options
               );
             });
           });
@@ -141,11 +138,11 @@ describe('Renegade E2E', () => {
     const network = Network.ARBITRUM;
 
     // TODO: Modify the tokenASymbol, tokenBSymbol, tokenAAmount;
-    const tokenASymbol: string = 'USDC';
-    const tokenBSymbol: string = 'WETH';
+    const quoteSymbol: string = 'USDC';
+    const baseSymbol: string = 'WETH';
 
-    const tokenAAmount: string = '10000000'; // 10 USDC
-    const tokenBAmount: string = '100000000000000000'; // 0.1 WETH
+    const quoteAmount: string = '10000000'; // 10 USDC
+    const baseAmount: string = '10000000000000000'; // 0.01 WETH
 
     // const tokenASymbol: string = 'WETH';
     // const tokenBSymbol: string = 'USDC';
@@ -153,15 +150,15 @@ describe('Renegade E2E', () => {
     // const tokenAAmount: string = '100000000000000000'; // 0.1 WETH
     // const tokenBAmount: string = '10000000'; // 10 USDC
 
-    const nativeTokenAmount = '100000000000000000'; // 0.1 ETH
+    const nativeTokenAmount = '10000000000000000'; // 0.01 ETH
 
     testForNetwork(
       network,
       dexKey,
-      tokenASymbol,
-      tokenBSymbol,
-      tokenAAmount,
-      tokenBAmount,
+      quoteSymbol,
+      baseSymbol,
+      quoteAmount,
+      baseAmount,
       nativeTokenAmount,
     );
 

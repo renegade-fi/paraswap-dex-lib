@@ -286,6 +286,9 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     const baseToken = pairContext.baseToken;
     const quoteToken = pairContext.quoteToken;
     const srcIsBase = pairContext.srcIsBase;
+    const srcIsUSDC =
+      srcToken.address.toLowerCase() ===
+      this.getUSDCAddress(this.network).toLowerCase();
 
     const prices = amounts.map(amount => {
       // v0 implementation: assume the midpoint level has enough size and ignore partial fill calculations.
@@ -295,18 +298,16 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
           const quoteDecimal = baseDecimal.multipliedBy(price);
           return convertFromDecimal(quoteDecimal, quoteToken.decimals);
         }
-
+        // amount is in units of quote token
         const quoteDecimal = convertToDecimal(amount, quoteToken.decimals);
         const baseDecimal = quoteDecimal.dividedBy(price);
-        return convertFromDecimal(baseDecimal, baseToken.decimals);
+        return convertFromDecimal(baseDecimal, baseToken.decimals); // units of base token
       }
-
       if (side === SwapSide.SELL) {
         const quoteDecimal = convertToDecimal(amount, quoteToken.decimals);
         const baseDecimal = quoteDecimal.dividedBy(price);
         return convertFromDecimal(baseDecimal, baseToken.decimals);
       }
-
       const baseDecimal = convertToDecimal(amount, baseToken.decimals);
       const quoteDecimal = baseDecimal.multipliedBy(price);
       return convertFromDecimal(quoteDecimal, quoteToken.decimals);
@@ -318,15 +319,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       srcToken.address,
       destToken.address,
     );
-
-    this.logger.debug(`${this.dexKey}-${this.network}: getPricesVolume`, {
-      prices,
-      unit: BigInt(unitDecimals),
-      data: {},
-      poolIdentifiers: [poolIdentifier],
-      exchange: this.dexKey,
-      gasCost: RENEGADE_GAS_COST,
-    });
 
     return [
       {
@@ -433,13 +425,15 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   ): AdapterExchangeParam {
     const settlementTx = data?.settlementTx;
 
-    assert(
-      settlementTx !== undefined && settlementTx.data !== undefined,
-      `${this.dexKey}-${this.network}: settlementTx missing from data`,
-    );
+    if (!settlementTx || !settlementTx.data) {
+      throw new Error(
+        `${this.dexKey}-${this.network}: settlementTx missing from data`,
+      );
+    }
 
-    const targetExchange =
-      settlementTx.to !== undefined ? settlementTx.to : this.settlementAddress;
+    const targetExchange = settlementTx.to
+      ? settlementTx.to
+      : this.settlementAddress;
 
     return {
       targetExchange,
@@ -471,13 +465,15 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   ): DexExchangeParam {
     const settlementTx = data?.settlementTx;
 
-    assert(
-      settlementTx !== undefined && settlementTx.data !== undefined,
-      `${this.dexKey}-${this.network}: settlementTx missing from data`,
-    );
+    if (!settlementTx || !settlementTx.data) {
+      throw new Error(
+        `${this.dexKey}-${this.network}: settlementTx missing from data`,
+      );
+    }
 
-    const targetExchange =
-      settlementTx.to !== undefined ? settlementTx.to : this.settlementAddress;
+    const targetExchange = settlementTx.to
+      ? settlementTx.to
+      : this.settlementAddress;
 
     return {
       needWrapNative: this.needWrapNative,
@@ -496,6 +492,13 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     side: SwapSide,
     options: PreprocessTransactionOptions,
   ): Promise<[OptimalSwapExchange<RenegadeData>, ExchangeTxInfo]> {
+    this.logger.debug('🚀 Renegade PreProcess Transaction', {
+      optimalSwapExchange,
+      srcToken,
+      destToken,
+      side,
+      options,
+    });
     const usdcAddress = this.getUSDCAddress(this.network).toLowerCase();
     const srcIsUSDC = srcToken.address.toLowerCase() === usdcAddress;
     const destIsUSDC = destToken.address.toLowerCase() === usdcAddress;
@@ -524,19 +527,34 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
 
     if (orderSide === 'Sell') {
       if (side === SwapSide.SELL) {
+        // surplus = receivedAmount - destAmount
+
+        baseAmount = srcAmount;
+        minFillSize = baseAmount;
+
+        // exactQuoteOutput = destAmount;
+      } else {
+        // surplus = srcAmount - spentAmount
+
         // baseAmount = srcAmount;
         // minFillSize = baseAmount;
-        // TODO: set exactQuoteOutput (exactDestOutput) that contract expects
-        exactQuoteOutput = destAmount;
-      } else {
+
         exactQuoteOutput = destAmount;
       }
     } else {
       if (side === SwapSide.SELL) {
+        // surplus = receivedAmount - destAmount
+
+        // exactBaseOutput = destAmount;
+
+        quoteAmount = srcAmount;
+        minFillSize = quoteAmount;
+      } else {
+        // surplus = srcAmount - spentAmount
+
         // quoteAmount = srcAmount;
         // minFillSize = quoteAmount;
-        exactBaseOutput = destAmount;
-      } else {
+
         exactBaseOutput = destAmount;
       }
     }
@@ -554,10 +572,14 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
 
     const response = await this.renegadeClient.requestExternalMatch(
       externalOrder,
-      options.recipient,
     );
 
-    const settlementTx = response?.match_bundle?.settlement_tx;
+    this.logger.info(
+      '🚀 Renegade External Match Response',
+      response.match_bundle,
+    );
+
+    const settlementTx = response?.match_bundle?.settlement_tx ?? undefined;
 
     assert(
       settlementTx !== undefined && settlementTx.data !== undefined,

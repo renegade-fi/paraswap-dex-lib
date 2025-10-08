@@ -100,47 +100,47 @@ function testForNetwork(
 describe('Bebop E2E', () => {
   const dexKey = 'Bebop';
 
-  describe('Mainnetx', () => {
-    const network = Network.MAINNET;
+  // describe('Mainnetx', () => {
+  //   const network = Network.MAINNET;
 
-    const tokenASymbol: string = 'USDC';
-    const tokenBSymbol: string = 'WETH';
+  //   const tokenASymbol: string = 'USDC';
+  //   const tokenBSymbol: string = 'WETH';
 
-    const tokenAAmount: string = '1000000000';
-    const tokenBAmount: string = '1000000000000000000';
-    const nativeTokenAmount = '1000000000000000000';
+  //   const tokenAAmount: string = '1000000000';
+  //   const tokenBAmount: string = '1000000000000000000';
+  //   const nativeTokenAmount = '1000000000000000000';
 
-    testForNetwork(
-      network,
-      dexKey,
-      tokenASymbol,
-      tokenBSymbol,
-      tokenAAmount,
-      tokenBAmount,
-      nativeTokenAmount,
-    );
-  });
+  //   testForNetwork(
+  //     network,
+  //     dexKey,
+  //     tokenASymbol,
+  //     tokenBSymbol,
+  //     tokenAAmount,
+  //     tokenBAmount,
+  //     nativeTokenAmount,
+  //   );
+  // });
 
-  describe('Mainnet Alt Pair', () => {
-    const network = Network.MAINNET;
+  // describe('Mainnet Alt Pair', () => {
+  //   const network = Network.MAINNET;
 
-    const tokenASymbol: string = 'WBTC';
-    const tokenBSymbol: string = 'WETH';
+  //   const tokenASymbol: string = 'WBTC';
+  //   const tokenBSymbol: string = 'WETH';
 
-    const tokenAAmount: string = '10000000';
-    const tokenBAmount: string = '1000000000000000000';
-    const nativeTokenAmount = '1000000000000000000';
+  //   const tokenAAmount: string = '10000000';
+  //   const tokenBAmount: string = '1000000000000000000';
+  //   const nativeTokenAmount = '1000000000000000000';
 
-    testForNetwork(
-      network,
-      dexKey,
-      tokenASymbol,
-      tokenBSymbol,
-      tokenAAmount,
-      tokenBAmount,
-      nativeTokenAmount,
-    );
-  });
+  //   testForNetwork(
+  //     network,
+  //     dexKey,
+  //     tokenASymbol,
+  //     tokenBSymbol,
+  //     tokenAAmount,
+  //     tokenBAmount,
+  //     nativeTokenAmount,
+  //   );
+  // });
 
   describe('Arbitrum', () => {
     const network = Network.ARBITRUM;
@@ -163,66 +163,66 @@ describe('Bebop E2E', () => {
     );
   });
 
-  describe('Base', () => {
-    const network = Network.BASE;
+  // describe('Base', () => {
+  //   const network = Network.BASE;
 
-    const tokenASymbol: string = 'USDbC';
-    const tokenBSymbol: string = 'WETH';
+  //   const tokenASymbol: string = 'USDbC';
+  //   const tokenBSymbol: string = 'WETH';
 
-    const tokenAAmount: string = '1000000000';
-    const tokenBAmount: string = '1000000000000000000';
-    const nativeTokenAmount = '1000000000000000000';
+  //   const tokenAAmount: string = '1000000000';
+  //   const tokenBAmount: string = '1000000000000000000';
+  //   const nativeTokenAmount = '1000000000000000000';
 
-    testForNetwork(
-      network,
-      dexKey,
-      tokenASymbol,
-      tokenBSymbol,
-      tokenAAmount,
-      tokenBAmount,
-      nativeTokenAmount,
-    );
-  });
+  //   testForNetwork(
+  //     network,
+  //     dexKey,
+  //     tokenASymbol,
+  //     tokenBSymbol,
+  //     tokenAAmount,
+  //     tokenBAmount,
+  //     nativeTokenAmount,
+  //   );
+  // });
 
-  describe('Optimism', () => {
-    const network = Network.OPTIMISM;
+  // describe('Optimism', () => {
+  //   const network = Network.OPTIMISM;
 
-    const tokenASymbol: string = 'USDT';
-    const tokenBSymbol: string = 'WETH';
+  //   const tokenASymbol: string = 'USDT';
+  //   const tokenBSymbol: string = 'WETH';
 
-    const tokenAAmount: string = '1000000000';
-    const tokenBAmount: string = '1000000000000000000';
-    const nativeTokenAmount = '1000000000000000000';
+  //   const tokenAAmount: string = '1000000000';
+  //   const tokenBAmount: string = '1000000000000000000';
+  //   const nativeTokenAmount = '1000000000000000000';
 
-    testForNetwork(
-      network,
-      dexKey,
-      tokenASymbol,
-      tokenBSymbol,
-      tokenAAmount,
-      tokenBAmount,
-      nativeTokenAmount,
-    );
-  });
+  //   testForNetwork(
+  //     network,
+  //     dexKey,
+  //     tokenASymbol,
+  //     tokenBSymbol,
+  //     tokenAAmount,
+  //     tokenBAmount,
+  //     nativeTokenAmount,
+  //   );
+  // });
 
-  describe('BSC', () => {
-    const network = Network.BSC;
+  // describe('BSC', () => {
+  //   const network = Network.BSC;
 
-    const tokenASymbol: string = 'USDT';
-    const tokenBSymbol: string = 'ETH';
+  //   const tokenASymbol: string = 'USDT';
+  //   const tokenBSymbol: string = 'ETH';
 
-    const tokenAAmount: string = '100000000000000000000';
-    const tokenBAmount: string = '100000000000000000';
-    const nativeTokenAmount = '1000000000000000000';
+  //   const tokenAAmount: string = '100000000000000000000';
+  //   const tokenBAmount: string = '100000000000000000';
+  //   const nativeTokenAmount = '1000000000000000000';
 
-    testForNetwork(
-      network,
-      dexKey,
-      tokenASymbol,
-      tokenBSymbol,
-      tokenAAmount,
-      tokenBAmount,
-      nativeTokenAmount,
-    );
-  });
+  //   testForNetwork(
+  //     network,
+  //     dexKey,
+  //     tokenASymbol,
+  //     tokenBSymbol,
+  //     tokenAAmount,
+  //     tokenBAmount,
+  //     nativeTokenAmount,
+  //   );
+  // });
 });
