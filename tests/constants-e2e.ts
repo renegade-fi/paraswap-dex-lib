@@ -1,10 +1,6 @@
 import { Address, Token } from '../src/types';
 import { ETHER_ADDRESS, Network } from '../src/constants';
 
-export const GIFTER_ADDRESS = '0xb22fC4eC94D555A5049593ca4552c810Fb8a6d00';
-export const GENERIC_ADDR1 = '0xbe9317f6711e2da074fe1f168fd9c402bc0a9d1b';
-export const GENERIC_ADDR2 = '0x230a1ac45690b9ae1176389434610b9526d2f21b';
-
 export const Tokens: {
   [network: number]: { [symbol: string]: Token };
 } = {
@@ -96,6 +92,10 @@ export const Tokens: {
     },
     USDE: {
       address: '0x4c9edd5852cd905f086c759e8383e09bff1e68b3',
+      decimals: 18,
+    },
+    ebUSD: {
+      address: '0x09fD37d9AA613789c517e76DF1c53aEce2b60Df4',
       decimals: 18,
     },
     EKUBO: {
@@ -219,8 +219,16 @@ export const Tokens: {
       address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
       decimals: 18,
     },
+    VLR: {
+      address: '0x4e107a0000DB66f0E9Fd2039288Bf811dD1f9c74',
+      decimals: 18,
+    },
     PSP: {
       address: '0xcafe001067cdef266afb7eb5a286dcfd277f3de5',
+      decimals: 18,
+    },
+    sePSP1: {
+      address: '0x716fBC68E0c761684D9280484243FF094CC5FfAB',
       decimals: 18,
     },
     SETH: {
@@ -590,6 +598,11 @@ export const Tokens: {
       decimals: 6,
       symbol: 'wM',
     },
+    UsualUSDC: {
+      address: '0xb672B3976bAa3952bFb2eCE8eeFB784f8daB1424',
+      decimals: 6,
+      symbol: 'UsualUSDC',
+    },
     UsualM: {
       address: '0x4cbc25559dbbd1272ec5b64c7b5f48a2405e6470',
       decimals: 6,
@@ -621,6 +634,10 @@ export const Tokens: {
     },
     USR: {
       address: '0x66a1e37c9b0eaddca17d3662d6c05f4decf3e110',
+      decimals: 18,
+    },
+    USDP: {
+      address: '0x8e870d67f660d95d5be530380d0ec0bd388289e1',
       decimals: 18,
     },
   },
@@ -1412,6 +1429,10 @@ export const Tokens: {
       address: '0x4ecf61a6c2FaB8A047CEB3B3B263B401763e9D49',
       decimals: 18,
     },
+    SILO: {
+      address: '0x0341c0c0ec423328621788d4854119b97f44e391',
+      decimals: 18,
+    },
   },
   [Network.OPTIMISM]: {
     DAI: {
@@ -1537,6 +1558,18 @@ export const Tokens: {
       address: '0x6ab707aca953edaefbc4fd23ba73294241490620',
       decimals: 6,
     },
+    VLR: {
+      address: '0x4e107a0000DB66f0E9Fd2039288Bf811dD1f9c74',
+      decimals: 18,
+    },
+    PSP: {
+      address: '0xd3594E879B358F430E20F82bea61e83562d49D48',
+      decimals: 18,
+    },
+    sePSP1: {
+      address: '0x8C934b7dBc782568d14ceaBbEAeDF37cB6348615',
+      decimals: 18,
+    },
     waOptWETH: {
       address: '0x464b808c2c7e04b07e860fdf7a91870620246148',
       decimals: 18,
@@ -1621,6 +1654,10 @@ export const Tokens: {
     },
     SWPR: {
       address: '0x532801ED6f82FFfD2DAB70A19fC2d7B2772C4f4b',
+      decimals: 18,
+    },
+    BREAD: {
+      address: '0xa555d5344f6FB6c65da19e403Cb4c1eC4a1a5Ee3',
       decimals: 18,
     },
   },
