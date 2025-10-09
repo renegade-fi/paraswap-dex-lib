@@ -11,9 +11,6 @@ export type RenegadePairData = {
   asks: RenegadePriceLevel[];
 };
 
-// Example pair identifier: "0xc3414a7ef14aaaa9c4522dfc00a4e66e74e9c25a/0xdf8d259c04020562717557f2b5a3cf28e92707d1"
-// Format: `${baseToken}/${quoteToken}` where USDC is always the quote token
-
 // Configuration for RateFetcher
 export type RenegadeRateFetcherConfig = {
   apiKey: string;
@@ -22,13 +19,6 @@ export type RenegadeRateFetcherConfig = {
   levelsCacheTTL: number;
   tokenMetadataCacheKey: string;
   tokenMetadataCacheTTL: number;
-};
-
-// Minimal token metadata for getTopPoolsForToken (YAGNI)
-export type RenegadeTokenMetadata = {
-  address: string;
-  decimals: number;
-  ticker: string;
 };
 
 // Full token metadata structure from Renegade token mappings
@@ -58,10 +48,6 @@ export type DexParams = {
   chainName: string;
   settlementAddress: string;
 };
-
-// ============================================================================
-// Quote and Assemble Endpoint Types (from OpenAPI spec)
-// ============================================================================
 
 /**
  * Represents a token transfer with mint address and amount

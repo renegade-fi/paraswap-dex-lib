@@ -4,9 +4,9 @@ import { Network } from '../../constants';
 import {
   RenegadePairData,
   RenegadeRateFetcherConfig,
-  RenegadeTokenMetadata,
   RenegadeTokenRemap,
 } from './types';
+import { Token } from '../../types';
 import {
   buildRenegadeApiUrl,
   RENEGADE_LEVELS_ENDPOINT,
@@ -27,7 +27,12 @@ import { RequestConfig } from '../../dex-helper/irequest-wrapper';
  */
 export class RateFetcher {
   private levelsFetcher: Fetcher<RenegadeLevelsResponse>;
-  private tokenMetadataFetcher!: Fetcher<RenegadeTokenRemap>; // Initialized in constructor
+  private levelsCacheKey: string;
+  private levelsCacheTTL: number;
+
+  private tokenMetadataFetcher!: Fetcher<RenegadeTokenRemap>;
+  private tokenMetadataCacheKey: string;
+  private tokenMetadataCacheTTL: number;
 
   constructor(
     private dexHelper: IDexHelper,
@@ -36,6 +41,10 @@ export class RateFetcher {
     private logger: Logger,
     private config: RenegadeRateFetcherConfig,
   ) {
+    this.levelsCacheKey = config.levelsCacheKey;
+    this.levelsCacheTTL = config.levelsCacheTTL;
+    this.tokenMetadataCacheKey = config.tokenMetadataCacheKey;
+    this.tokenMetadataCacheTTL = config.tokenMetadataCacheTTL;
     // Build network-specific API URL
     const baseUrl = buildRenegadeApiUrl(this.network);
     const url = `${baseUrl}${RENEGADE_LEVELS_ENDPOINT}`;
@@ -98,44 +107,28 @@ export class RateFetcher {
       this.logger,
     );
 
-    // Initialize token metadata fetcher (one-time fetch, no polling)
-    this.initializeTokenMetadataFetcher();
-  }
-
-  /**
-   * Initialize token metadata fetcher for one-time fetch.
-   * Token metadata is static and doesn't need polling.
-   */
-  private initializeTokenMetadataFetcher(): void {
     const chainName = this.getChainName();
-    const url = `${RENEGADE_TOKEN_MAPPINGS_BASE_URL}${chainName}.json`;
-
-    // Create caster function for token metadata
-    const caster = (data: unknown): RenegadeTokenRemap => {
+    const tokenUrl = `${RENEGADE_TOKEN_MAPPINGS_BASE_URL}${chainName}.json`;
+    const tokenCaster = (data: unknown): RenegadeTokenRemap => {
       if (typeof data !== 'object' || data === null) {
         throw new Error('Invalid token metadata response format');
       }
       return data as RenegadeTokenRemap;
     };
-
-    // Create request info for token metadata fetcher
     const tokenRequestInfo: RequestInfo<RenegadeTokenRemap> = {
       requestOptions: {
-        url,
+        url: tokenUrl,
         method: 'GET',
       },
-      caster,
+      caster: tokenCaster,
     };
-
-    // Initialize token metadata fetcher with very long polling interval (effectively one-time)
-    // We'll trigger it manually and stop polling after first fetch
     this.tokenMetadataFetcher = new Fetcher<RenegadeTokenRemap>(
       this.dexHelper.httpRequest,
       {
         info: tokenRequestInfo,
         handler: this.handleTokenMetadataResponse.bind(this),
       },
-      24 * 60 * 60 * 1000, // 24 hours - effectively no polling
+      24 * 60 * 60 * 1000,
       this.logger,
     );
   }
@@ -169,8 +162,8 @@ export class RateFetcher {
     this.dexHelper.cache.setex(
       this.dexKey,
       this.network,
-      this.config.levelsCacheKey,
-      this.config.levelsCacheTTL,
+      this.levelsCacheKey,
+      this.levelsCacheTTL,
       JSON.stringify(rawData), // Serialize the raw pair data
     );
   }
@@ -181,15 +174,15 @@ export class RateFetcher {
    * @param tokenRemap - The token metadata response
    */
   private handleTokenMetadataResponse(tokenRemap: RenegadeTokenRemap): void {
-    // Convert full token info to minimal metadata (YAGNI)
-    const tokensMap: Record<string, RenegadeTokenMetadata> = {};
+    // Convert full token info to core Token type
+    const tokensMap: Record<string, Token> = {};
 
     for (const tokenInfo of tokenRemap.tokens) {
       const address = tokenInfo.address.toLowerCase();
       tokensMap[address] = {
         address: tokenInfo.address,
         decimals: tokenInfo.decimals,
-        ticker: tokenInfo.ticker,
+        symbol: tokenInfo.ticker,
       };
     }
 
@@ -197,72 +190,19 @@ export class RateFetcher {
     this.dexHelper.cache.setex(
       this.dexKey,
       this.network,
-      this.config.tokenMetadataCacheKey,
-      this.config.tokenMetadataCacheTTL,
+      this.tokenMetadataCacheKey,
+      this.tokenMetadataCacheTTL,
       JSON.stringify(tokensMap),
     );
   }
 
-  /**
-   * Fetch token metadata once (no polling).
-   * Token metadata is static and only needs to be fetched once.
-   *
-   * @returns Promise resolving to true if successful, false otherwise
-   */
-  async fetchTokenMetadataOnce(): Promise<boolean> {
-    try {
-      // Trigger one-time fetch
-      await this.tokenMetadataFetcher.fetch(true);
-
-      // Stop polling after first fetch since token metadata is static
-      this.tokenMetadataFetcher.stopPolling();
-
-      return true;
-    } catch (error) {
-      this.logger.error(
-        `${this.dexKey}: Failed to fetch token metadata:`,
-        error,
-      );
-      return false;
-    }
-  }
-
-  /**
-   * Start polling for price level updates.
-   *
-   * Begins periodic fetching of price levels from the Renegade API.
-   */
   start(): void {
-    this.logger.info(`${this.dexKey}: Starting Renegade price levels polling`);
     this.levelsFetcher.startPolling();
+    this.tokenMetadataFetcher.startPolling();
   }
 
-  /**
-   * Stop polling for price level updates.
-   *
-   * Stops the periodic fetching and cleans up resources.
-   */
   stop(): void {
-    this.logger.info(`${this.dexKey}: Stopping Renegade price levels polling`);
     this.levelsFetcher.stopPolling();
-    // Token metadata fetcher doesn't need to be stopped as it's one-time only
-  }
-
-  /**
-   * Check if polling is currently active.
-   *
-   * @returns True if polling is active, false otherwise
-   */
-  isPolling(): boolean {
-    return this.levelsFetcher.isPolling();
-  }
-
-  /**
-   * Check if the last fetch operation succeeded.
-   *
-   * @returns True if the last fetch succeeded, false otherwise
-   */
-  isLastFetchSuccessful(): boolean {
-    return this.levelsFetcher.lastFetchSucceeded;
+    this.tokenMetadataFetcher.stopPolling();
   }
 }

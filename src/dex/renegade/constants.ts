@@ -4,36 +4,32 @@
 
 import { Network } from '../../constants';
 
-// Base API URL template - subdomain varies by network
-export const RENEGADE_API_URL_TEMPLATE =
-  'https://{network}.auth-server.renegade.fi';
+// Base API URLs for each network
+export const RENEGADE_ARBITRUM_BASE_URL =
+  'https://arbitrum-one.auth-server.renegade.fi';
+export const RENEGADE_BASE_BASE_URL =
+  'https://base-mainnet.auth-server.renegade.fi';
+
 export const RENEGADE_LEVELS_ENDPOINT = '/rfqt/v3/levels';
 export const RENEGADE_MATCH_ENDPOINT =
   '/v0/matching-engine/request-external-match';
 
-// Network to Renegade subdomain mapping
-export const RENEGADE_NETWORK_MAPPING: { [key in Network]?: string } = {
-  [Network.ARBITRUM]: 'arbitrum-one',
-  [Network.BASE]: 'base-mainnet',
-  // TODO: Add testnet mappings when needed
-  // [Network.ARBITRUM_SEPOLIA]: 'arbitrum-sepolia',
-  // [Network.BASE_SEPOLIA]: 'base-sepolia',
-};
-
 /**
- * Build Renegade API URL for a specific network.
+ * Get Renegade API base URL for a specific network.
  *
  * @param network - ParaSwap network identifier
- * @returns Complete API URL for the network
+ * @returns Complete base API URL for the network
  * @throws Error if network is not supported by Renegade
  */
 export function buildRenegadeApiUrl(network: Network): string {
-  const renegadeNetwork = RENEGADE_NETWORK_MAPPING[network];
-  if (!renegadeNetwork) {
-    throw new Error(`Network ${network} is not supported by Renegade`);
+  switch (network) {
+    case Network.ARBITRUM:
+      return RENEGADE_ARBITRUM_BASE_URL;
+    case Network.BASE:
+      return RENEGADE_BASE_BASE_URL;
+    default:
+      throw new Error(`Network ${network} is not supported by Renegade`);
   }
-
-  return RENEGADE_API_URL_TEMPLATE.replace('{network}', renegadeNetwork);
 }
 
 // Caching constants
@@ -46,6 +42,7 @@ export const RENEGADE_TOKEN_METADATA_CACHE_KEY = 'renegade_token_metadata';
 
 // API timeout settings
 export const RENEGADE_API_TIMEOUT_MS = 10000; // 10 seconds
+export const RENEGADE_INIT_TIMEOUT_MS = 5000; // 5 seconds - wait for fetchers to populate cache
 
 // Authentication constants
 export const RENEGADE_HEADER_PREFIX = 'x-renegade';

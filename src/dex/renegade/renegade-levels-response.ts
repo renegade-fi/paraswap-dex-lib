@@ -1,6 +1,6 @@
 import BigNumber from 'bignumber.js';
 import { Token } from '../../types';
-import { RenegadePairData, RenegadeTokenMetadata } from './types';
+import { RenegadePairData } from './types';
 
 export type RenegadePairContext = {
   pairId: string;
@@ -151,7 +151,7 @@ export class RenegadeLevelsResponse {
    */
   getAllPairsForToken(
     tokenAddress: string,
-    tokensMap: Record<string, RenegadeTokenMetadata>,
+    tokensMap: Record<string, Token>,
   ): RenegadePairContext[] {
     const normalizedTokenAddress = tokenAddress.toLowerCase();
     const pairs: RenegadePairContext[] = [];
@@ -164,24 +164,11 @@ export class RenegadeLevelsResponse {
 
       if (!isBase && !isQuote) continue;
 
-      // Get token metadata
-      const baseMetadata = tokensMap[baseAddress.toLowerCase()];
-      const quoteMetadata = tokensMap[quoteAddress.toLowerCase()];
+      // Get tokens from map
+      const baseToken = tokensMap[baseAddress.toLowerCase()];
+      const quoteToken = tokensMap[quoteAddress.toLowerCase()];
 
-      if (!baseMetadata || !quoteMetadata) continue;
-
-      // Build Token objects
-      const baseToken: Token = {
-        address: baseMetadata.address,
-        decimals: baseMetadata.decimals,
-        symbol: baseMetadata.ticker,
-      };
-
-      const quoteToken: Token = {
-        address: quoteMetadata.address,
-        decimals: quoteMetadata.decimals,
-        symbol: quoteMetadata.ticker,
-      };
+      if (!baseToken || !quoteToken) continue;
 
       pairs.push({
         pairId,
