@@ -1,6 +1,7 @@
 import BigNumber from 'bignumber.js';
 import { Token } from '../../types';
 import { RenegadePairData } from './types';
+import { ETHER_ADDRESS } from '../../constants';
 
 export type RenegadePairContext = {
   pairId: string;
@@ -22,6 +23,7 @@ export class RenegadeLevelsResponse {
   constructor(
     data: { [pairIdentifier: string]: RenegadePairData },
     private readonly usdcAddress: string,
+    wethAddress?: string,
   ) {
     // Extract data from HTTP response
     this.levels = data;
@@ -29,6 +31,17 @@ export class RenegadeLevelsResponse {
     // Basic validation - ensure we have an object
     if (!this.levels || typeof this.levels !== 'object') {
       throw new Error('Invalid Renegade levels response: expected object');
+    }
+
+    // Duplicate WETH/USDC levels as ETH/USDC for native ETH support
+    if (wethAddress) {
+      const wethUsdcKey = `${wethAddress.toLowerCase()}/${usdcAddress.toLowerCase()}`;
+      const ethUsdcKey = `${ETHER_ADDRESS}/${usdcAddress.toLowerCase()}`;
+
+      if (this.levels[wethUsdcKey]) {
+        // Copy WETH/USDC levels to ETH/USDC
+        this.levels[ethUsdcKey] = this.levels[wethUsdcKey];
+      }
     }
   }
 

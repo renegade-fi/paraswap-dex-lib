@@ -82,6 +82,48 @@ function testForNetwork(
       describe(`${side}`, () => {
         contractMethods.forEach((contractMethod: ContractMethod) => {
           describe(`${contractMethod}`, () => {
+            // it(`${quoteSymbol} -> ${nativeTokenSymbol}`, async () => {
+            //   await testE2E(
+            //     tokens[quoteSymbol], // srcToken
+            //     tokens[nativeTokenSymbol], // destToken
+            //     holders[quoteSymbol], // senderAddress
+            //     side === SwapSide.SELL ? quoteAmount : nativeTokenAmount, // srcToken amount
+            //     side,
+            //     dexKey,
+            //     contractMethod,
+            //     network,
+            //     provider,
+            //     undefined, // poolIdentifiers
+            //     undefined, // limitOrderProvider
+            //     undefined, // transferFees
+            //     100, // slippage
+            //     SLEEP_MS,
+            //     undefined, // replaceTenderlyWithEstimateGas
+            //     undefined, // forceRoute
+            //     undefined, // options
+            //   );
+            // });
+            // it(`${nativeTokenSymbol} -> ${quoteSymbol}`, async () => {
+            //   await testE2E(
+            //     tokens[nativeTokenSymbol], // srcToken
+            //     tokens[quoteSymbol], // destToken
+            //     holders[nativeTokenSymbol], // senderAddress
+            //     side === SwapSide.SELL ? nativeTokenAmount : quoteAmount, // srcToken amount
+            //     side,
+            //     dexKey,
+            //     contractMethod,
+            //     network,
+            //     provider,
+            //     undefined, // poolIdentifiers
+            //     undefined, // limitOrderProvider
+            //     undefined, // transferFees
+            //     100, // slippage
+            //     SLEEP_MS,
+            //     undefined, // replaceTenderlyWithEstimateGas
+            //     undefined, // forceRoute
+            //     undefined, // options
+            //   );
+            // });
             it(`${quoteSymbol} -> ${baseSymbol}`, async () => {
               await testE2E(
                 tokens[quoteSymbol], // srcToken

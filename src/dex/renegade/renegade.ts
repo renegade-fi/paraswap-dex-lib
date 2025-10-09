@@ -281,20 +281,16 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   ): AdapterExchangeParam {
     const settlementTx = data?.settlementTx;
 
-    if (!settlementTx || !settlementTx.data) {
+    if (!settlementTx) {
       throw new Error(
         `${this.dexKey}-${this.network}: settlementTx missing from data`,
       );
     }
 
-    const targetExchange = settlementTx.to
-      ? settlementTx.to
-      : this.settlementAddress;
-
     return {
-      targetExchange,
+      targetExchange: settlementTx.to,
       payload: settlementTx.data,
-      networkFee: settlementTx.value ?? '0',
+      networkFee: settlementTx.value,
     };
   }
 
@@ -392,21 +388,17 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   ): DexExchangeParam {
     const settlementTx = data?.settlementTx;
 
-    if (!settlementTx || !settlementTx.data) {
+    if (!settlementTx) {
       throw new Error(
         `${this.dexKey}-${this.network}: settlementTx missing from data`,
       );
     }
 
-    const targetExchange = settlementTx.to
-      ? settlementTx.to
-      : this.settlementAddress;
-
     return {
       needWrapNative: this.needWrapNative,
       dexFuncHasRecipient: false,
       exchangeData: settlementTx.data,
-      targetExchange,
+      targetExchange: settlementTx.to,
       returnAmountPos: undefined,
       specialDexSupportsInsertFromAmount: false,
     };
@@ -446,7 +438,7 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       const settlementTx = response?.match_bundle?.settlement_tx ?? undefined;
 
       assert(
-        settlementTx !== undefined && settlementTx.data !== undefined,
+        settlementTx !== undefined,
         `${this.dexKey}-${this.network}: Invalid RFQ response`,
       );
 

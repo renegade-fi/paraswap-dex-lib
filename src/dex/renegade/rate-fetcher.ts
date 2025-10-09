@@ -1,6 +1,6 @@
 import { IDexHelper } from '../../dex-helper';
 import { Logger } from '../../types';
-import { Network } from '../../constants';
+import { ETHER_ADDRESS, Network } from '../../constants';
 import {
   RenegadePairData,
   RenegadeRateFetcherConfig,
@@ -79,8 +79,9 @@ export class RateFetcher {
 
       const response = data as { [pairIdentifier: string]: RenegadePairData };
       const usdcAddress = RenegadeConfig['Renegade'][this.network].usdcAddress;
+      const wethAddress = this.dexHelper.config.data.wrappedNativeTokenAddress;
 
-      return new RenegadeLevelsResponse(response, usdcAddress);
+      return new RenegadeLevelsResponse(response, usdcAddress, wethAddress);
     };
 
     // Create request info for the Fetcher
@@ -185,6 +186,12 @@ export class RateFetcher {
         symbol: tokenInfo.ticker,
       };
     }
+
+    tokensMap[ETHER_ADDRESS.toLowerCase()] = {
+      address: ETHER_ADDRESS,
+      decimals: 18,
+      symbol: 'ETH',
+    };
 
     // Write to persistent cache
     this.dexHelper.cache.setex(

@@ -38,7 +38,7 @@ export type RenegadeTokenRemap = {
 
 // Data structure for DEX methods
 export type RenegadeData = {
-  settlementTx?: TransactionRequest;
+  settlementTx?: RenegadeTx;
   rawResponse?: SponsoredMatchResponse;
 };
 
@@ -137,25 +137,12 @@ export type SignedGasSponsorshipInfo = {
 };
 
 /**
- * Ethereum transaction request (alloy-compatible)
+ * Renegade transaction data
  */
-export type TransactionRequest = {
-  from?: string | null;
-  to?: string | null;
-  gas_price?: string | null;
-  max_fee_per_gas?: string | null;
-  max_priority_fee_per_gas?: string | null;
-  max_fee_per_blob_gas?: string | null;
-  gas?: string | null;
-  value?: string | null;
-  data?: string | null;
-  input?: string | null;
-  nonce?: string | null;
-  chain_id?: string | null;
-  access_list?: any[] | null;
-  type?: string | null;
-  blob_versioned_hashes?: string[] | null;
-  authorization_list?: any[] | null;
+export type RenegadeTx = {
+  to: string;
+  data: string;
+  value: string;
 };
 
 /**
@@ -166,7 +153,7 @@ export type AtomicMatchApiBundle = {
   fees: FeeTake;
   receive: ApiExternalAssetTransfer;
   send: ApiExternalAssetTransfer;
-  settlement_tx: TransactionRequest;
+  settlement_tx: RenegadeTx;
 };
 
 /**
