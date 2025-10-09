@@ -17,7 +17,6 @@ import {
   PoolLiquidity,
   PoolPrices,
   PreprocessTransactionOptions,
-  SimpleExchangeParam,
   Token,
   TransferFeeParams,
 } from '../../types';
@@ -123,31 +122,26 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     }
   }
 
-  async updatePoolState(): Promise<void> {
-    await this.setTokensMap();
+  // Returns the list of contract adapters (name and index)
+  // for a buy/sell. Return null if there are no adapters.
+  getAdapters(side: SwapSide): { name: string; index: number }[] | null {
+    // TODO: Implement adapters
+    return null;
   }
 
   /**
-   * Set token metadata map from cache or fetch if not available.
+   * Generate ParaSwap-compatible pool identifier following standard format.
+   *
+   * Follows ParaSwap standard: alphabetical sorting of token addresses
+   * Format: `${dexKey}_${sortedTokenA}_${sortedTokenB}`
+   *
+   * @param tokenA - First token address
+   * @param tokenB - Second token address
+   * @returns ParaSwap pool identifier
    */
-  async setTokensMap(): Promise<void> {
-    // Try to get from cache first
-    let metadata = await this.getCachedTokens();
-
-    if (!metadata) {
-      // If not in cache, fetch once
-      const success = await this.rateFetcher.fetchTokenMetadataOnce();
-      if (success) {
-        // Try cache again after fetch
-        metadata = await this.getCachedTokens();
-      }
-    }
-
-    if (metadata) {
-      this.tokensMap = metadata;
-    } else {
-      this.logger.warn('Failed to fetch token metadata');
-    }
+  private getPoolIdentifier(tokenA: Address, tokenB: Address): string {
+    const tokenAddresses = this._sortTokens(tokenA, tokenB).join('_');
+    return `${this.dexKey}_${tokenAddresses}`;
   }
 
   /**
@@ -269,6 +263,65 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     ];
   }
 
+  getCalldataGasCost(poolPrices: PoolPrices<RenegadeData>): number | number[] {
+    // TODO: Implement gas cost calculation
+    return CALLDATA_GAS_COST.DEX_OVERHEAD;
+  }
+
+  getAdapterParam(
+    srcToken: string,
+    destToken: string,
+    srcAmount: string,
+    destAmount: string,
+    data: RenegadeData,
+    side: SwapSide,
+  ): AdapterExchangeParam {
+    const settlementTx = data?.settlementTx;
+
+    if (!settlementTx || !settlementTx.data) {
+      throw new Error(
+        `${this.dexKey}-${this.network}: settlementTx missing from data`,
+      );
+    }
+
+    const targetExchange = settlementTx.to
+      ? settlementTx.to
+      : this.settlementAddress;
+
+    return {
+      targetExchange,
+      payload: settlementTx.data,
+      networkFee: settlementTx.value ?? '0',
+    };
+  }
+
+  async updatePoolState(): Promise<void> {
+    await this.setTokensMap();
+  }
+
+  /**
+   * Set token metadata map from cache or fetch if not available.
+   */
+  async setTokensMap(): Promise<void> {
+    // Try to get from cache first
+    let metadata = await this.getCachedTokens();
+
+    if (!metadata) {
+      // If not in cache, fetch once
+      const success = await this.rateFetcher.fetchTokenMetadataOnce();
+      if (success) {
+        // Try cache again after fetch
+        metadata = await this.getCachedTokens();
+      }
+    }
+
+    if (metadata) {
+      this.tokensMap = metadata;
+    } else {
+      this.logger.warn('Failed to fetch token metadata');
+    }
+  }
+
   async getTopPoolsForToken(
     tokenAddress: Address,
     limit: number,
@@ -352,45 +405,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     }
   }
 
-  getAdapterParam(
-    srcToken: string,
-    destToken: string,
-    srcAmount: string,
-    destAmount: string,
-    data: RenegadeData,
-    side: SwapSide,
-  ): AdapterExchangeParam {
-    const settlementTx = data?.settlementTx;
-
-    if (!settlementTx || !settlementTx.data) {
-      throw new Error(
-        `${this.dexKey}-${this.network}: settlementTx missing from data`,
-      );
-    }
-
-    const targetExchange = settlementTx.to
-      ? settlementTx.to
-      : this.settlementAddress;
-
-    return {
-      targetExchange,
-      payload: settlementTx.data,
-      networkFee: settlementTx.value ?? '0',
-    };
-  }
-
-  async getSimpleParam(
-    srcToken: string,
-    destToken: string,
-    srcAmount: string,
-    destAmount: string,
-    data: RenegadeData,
-    side: SwapSide,
-  ): Promise<SimpleExchangeParam> {
-    // TODO: Implement simple parameters
-    throw new Error('Not implemented');
-  }
-
   getDexParam(
     srcToken: Address,
     destToken: Address,
@@ -420,22 +434,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       returnAmountPos: undefined,
       specialDexSupportsInsertFromAmount: false,
     };
-  }
-
-  getCalldataGasCost(poolPrices: PoolPrices<RenegadeData>): number | number[] {
-    // TODO: Implement gas cost calculation
-    return CALLDATA_GAS_COST.DEX_OVERHEAD;
-  }
-
-  getAdapters(side?: SwapSide): { name: string; index: number }[] | null {
-    // TODO: Implement adapters
-    return null;
-  }
-
-  async releaseResources(): Promise<void> {
-    if (!this.dexHelper.config.isSlave) {
-      this.rateFetcher.stop();
-    }
   }
 
   async preProcessTransaction(
@@ -613,6 +611,12 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     };
   }
 
+  async releaseResources(): Promise<void> {
+    if (!this.dexHelper.config.isSlave) {
+      this.rateFetcher.stop();
+    }
+  }
+
   // Helpers
 
   /**
@@ -624,22 +628,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   getUSDCAddress(network: Network): string {
     return RenegadeConfig['Renegade'][network].usdcAddress;
   }
-
-  /**
-   * Generate ParaSwap-compatible pool identifier following standard format.
-   *
-   * Follows ParaSwap standard: alphabetical sorting of token addresses
-   * Format: `${dexKey}_${sortedTokenA}_${sortedTokenB}`
-   *
-   * @param tokenA - First token address
-   * @param tokenB - Second token address
-   * @returns ParaSwap pool identifier
-   */
-  private getPoolIdentifier(tokenA: Address, tokenB: Address): string {
-    const tokenAddresses = this._sortTokens(tokenA, tokenB).join('_');
-    return `${this.dexKey}_${tokenAddresses}`;
-  }
-
   /**
    * Sort token addresses alphabetically.
    *
