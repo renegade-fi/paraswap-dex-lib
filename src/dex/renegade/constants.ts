@@ -10,9 +10,6 @@ export const RENEGADE_API_URL_TEMPLATE =
 export const RENEGADE_LEVELS_ENDPOINT = '/rfqt/v3/levels';
 export const RENEGADE_MATCH_ENDPOINT =
   '/v0/matching-engine/request-external-match';
-export const RENEGADE_QUOTE_ENDPOINT = '/v0/matching-engine/quote';
-export const RENEGADE_ASSEMBLE_ENDPOINT =
-  '/v0/matching-engine/assemble-external-match';
 
 // Network to Renegade subdomain mapping
 export const RENEGADE_NETWORK_MAPPING: { [key in Network]?: string } = {
@@ -45,7 +42,6 @@ export const RENEGADE_LEVELS_POLLING_INTERVAL = 15000; // milliseconds
 export const RENEGADE_LEVELS_CACHE_KEY = 'renegade_levels';
 
 export const RENEGADE_TOKEN_METADATA_CACHE_TTL = 3600; // 1 hour in seconds
-export const RENEGADE_TOKEN_METADATA_POLLING_INTERVAL = 3600000; // 1 hour in milliseconds
 export const RENEGADE_TOKEN_METADATA_CACHE_KEY = 'renegade_token_metadata';
 
 // API timeout settings
@@ -64,4 +60,3 @@ export const RENEGADE_GAS_COST = 3_000_000; // Estimated gas cost for Renegade s
 // Token metadata API constants
 export const RENEGADE_TOKEN_MAPPINGS_BASE_URL =
   'https://raw.githubusercontent.com/renegade-fi/token-mappings/main/';
-export const RENEGADE_TOKEN_MAPPINGS_TIMEOUT_MS = 10000; // 10 seconds

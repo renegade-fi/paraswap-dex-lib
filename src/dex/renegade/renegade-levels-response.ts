@@ -1,10 +1,6 @@
-import { Response } from '../../dex-helper/irequest-wrapper';
-import {
-  RenegadePairData,
-  RenegadePriceLevel,
-  RenegadeTokenMetadata,
-} from './types';
+import BigNumber from 'bignumber.js';
 import { Token } from '../../types';
+import { RenegadePairData, RenegadeTokenMetadata } from './types';
 
 export type RenegadePairContext = {
   pairId: string;
@@ -37,19 +33,32 @@ export class RenegadeLevelsResponse {
   }
 
   /**
+   * Check if a pair is supported by Renegade.
+   *
+   * @param srcToken - Source token
+   * @param destToken - Destination token
+   * @returns true if the pair exists, false otherwise
+   */
+  hasPair(srcToken: Token, destToken: Token): boolean {
+    return this.resolvePair(srcToken, destToken) !== null;
+  }
+
+  /**
    * Resolve a ParaSwap (src,dest) pair into Renegade nomenclature.
    *
    * Renegade always quotes "base/quote" with USDC fixed as quote. The helper
    * determines which leg is base, produces the canonical pair identifier, and
    * returns the order book alongside a flag describing the src leg.
    */
-  resolvePair(srcToken: Token, destToken: Token): RenegadePairContext | null {
-    const srcIsUSDC = this.isTokenUSDC(srcToken);
-    const destIsUSDC = this.isTokenUSDC(destToken);
-
-    if (srcIsUSDC === destIsUSDC) {
+  private resolvePair(
+    srcToken: Token,
+    destToken: Token,
+  ): RenegadePairContext | null {
+    if (srcToken.address.toLowerCase() === destToken.address.toLowerCase()) {
       return null;
     }
+
+    const srcIsUSDC = this.isTokenUSDC(srcToken);
 
     const baseToken = srcIsUSDC ? destToken : srcToken;
     const quoteToken = srcIsUSDC ? srcToken : destToken;
@@ -74,20 +83,29 @@ export class RenegadeLevelsResponse {
   }
 
   /**
-   * Renegade exposes a single midpoint level per pair. This method returns the
-   * appropriate leg (bids if the caller supplies base, asks if the caller
-   * supplies quote) so downstream code can apply ParaSwap's sizing semantics.
+   * Get the price of a pair.
+   *
+   * Renegade exposes a single midpoint level per pair.
    */
-  getMidpointLevel(context: RenegadePairContext): RenegadePriceLevel | null {
+  getPrice(srcToken: Token, destToken: Token): BigNumber {
+    const context = this.resolvePair(srcToken, destToken);
+    if (!context) {
+      throw new Error('No pair found');
+    }
+
     const book = context.srcIsBase
       ? context.pairData.bids
       : context.pairData.asks;
 
     if (!book.length) {
-      return null;
+      throw new Error('No price level found');
     }
 
-    return book[0];
+    if (!book[0]) {
+      throw new Error('No price level found');
+    }
+
+    return new BigNumber(book[0][0]);
   }
 
   /**
@@ -106,21 +124,15 @@ export class RenegadeLevelsResponse {
   /**
    * Generate Renegade pair identifier for API lookup.
    *
-   * @param tokenA - First token address
-   * @param tokenB - Second token address
+   * @param baseMint - Base mint address
+   * @param quoteMint - Quote mint address
    * @returns Renegade pair identifier
    */
-  private getRenegadePairIdentifier(tokenA: string, tokenB: string): string {
-    return `${tokenA.toLowerCase()}/${tokenB.toLowerCase()}`;
-  }
-
-  /**
-   * Get all available pair identifiers.
-   *
-   * @returns Array of all pair identifiers
-   */
-  getAllPairs(): string[] {
-    return Object.keys(this.levels);
+  private getRenegadePairIdentifier(
+    baseMint: string,
+    quoteMint: string,
+  ): string {
+    return `${baseMint.toLowerCase()}/${quoteMint.toLowerCase()}`;
   }
 
   /**
@@ -181,26 +193,5 @@ export class RenegadeLevelsResponse {
     }
 
     return pairs;
-  }
-
-  /**
-   * Get token metadata for a given address.
-   *
-   * @param address - Token address
-   * @param tokensMap - Token metadata mapping
-   * @returns Token object or null if not found
-   */
-  getTokenMetadata(
-    address: string,
-    tokensMap: Record<string, RenegadeTokenMetadata>,
-  ): Token | null {
-    const metadata = tokensMap[address.toLowerCase()];
-    if (!metadata) return null;
-
-    return {
-      address: metadata.address,
-      decimals: metadata.decimals,
-      symbol: metadata.ticker,
-    };
   }
 }

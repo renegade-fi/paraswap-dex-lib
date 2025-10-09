@@ -46,19 +46,6 @@ export type RenegadeTokenRemap = {
   tokens: RenegadeTokenInfo[];
 };
 
-export type RenegadeSettlementTx = {
-  to?: string;
-  data?: string;
-  value?: string;
-  gas?: string;
-  gasPrice?: string;
-  maxFeePerGas?: string;
-  maxPriorityFeePerGas?: string;
-  nonce?: string;
-  chainId?: string;
-  type?: string;
-};
-
 // Data structure for DEX methods
 export type RenegadeData = {
   settlementTx?: TransactionRequest;
@@ -164,14 +151,6 @@ export type SignedGasSponsorshipInfo = {
 };
 
 /**
- * Response from quote endpoint
- */
-export type SponsoredQuoteResponse = {
-  signed_quote: SignedExternalQuote;
-  gas_sponsorship_info?: SignedGasSponsorshipInfo | null;
-};
-
-/**
  * Ethereum transaction request (alloy-compatible)
  */
 export type TransactionRequest = {
@@ -211,26 +190,4 @@ export type SponsoredMatchResponse = {
   match_bundle: AtomicMatchApiBundle;
   is_sponsored: boolean;
   gas_sponsorship_info?: GasSponsorshipInfo | null;
-};
-
-/**
- * Request body for quote endpoint
- */
-export type ExternalQuoteRequest = {
-  matching_pool?: string;
-  relayer_fee_rate?: number;
-  external_order: ExternalOrder;
-};
-
-/**
- * Request body for assemble endpoint
- */
-export type AssembleExternalMatchRequest = {
-  do_gas_estimation?: boolean;
-  allow_shared?: boolean;
-  matching_pool?: string | null;
-  relayer_fee_rate?: number;
-  receiver_address?: string | null;
-  updated_order?: ExternalOrder | null;
-  signed_quote: SignedExternalQuote;
 };

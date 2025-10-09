@@ -12,7 +12,6 @@ import {
   RENEGADE_LEVELS_ENDPOINT,
   RENEGADE_LEVELS_POLLING_INTERVAL,
   RENEGADE_TOKEN_MAPPINGS_BASE_URL,
-  RENEGADE_TOKEN_MAPPINGS_TIMEOUT_MS,
 } from './constants';
 import { generateRenegadeAuthHeaders } from './auth-helper';
 import { RenegadeLevelsResponse } from './renegade-levels-response';
@@ -43,14 +42,9 @@ export class RateFetcher {
 
     // Create authentication function for Renegade API
     const authenticate = (options: RequestConfig): RequestConfig => {
-      // Ensure headers object exists
-      if (!options.headers) {
-        options.headers = {};
-      }
-
       // Convert headers to string format for auth function
       const stringHeaders: Record<string, string> = {};
-      for (const [key, value] of Object.entries(options.headers)) {
+      for (const [key, value] of Object.entries(options.headers ?? {})) {
         stringHeaders[key] = String(value);
       }
 
@@ -63,8 +57,7 @@ export class RateFetcher {
         this.config.apiSecret,
       );
 
-      // Merge authenticated headers into request options
-      options.headers = { ...options.headers, ...authenticatedHeaders };
+      options.headers = authenticatedHeaders;
 
       return options;
     };
@@ -171,7 +164,6 @@ export class RateFetcher {
   private handleLevelsResponse(levelsResponse: RenegadeLevelsResponse): void {
     // Get raw data for serialization
     const rawData = levelsResponse.getRawData();
-    const pairCount = Object.keys(rawData).length;
 
     // Write to persistent cache (like Bebop)
     this.dexHelper.cache.setex(
@@ -200,8 +192,6 @@ export class RateFetcher {
         ticker: tokenInfo.ticker,
       };
     }
-
-    const tokenCount = Object.keys(tokensMap).length;
 
     // Write to persistent cache
     this.dexHelper.cache.setex(

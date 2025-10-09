@@ -20,23 +20,52 @@ import {
 } from './constants';
 
 /**
- * Decode a base64 string to a Uint8Array.
+ * Generate authentication headers for Renegade API requests.
  *
- * @param base64 - Base64 encoded string
- * @returns Uint8Array decoded from base64
+ * This function implements the exact authentication scheme required by Renegade:
+ * - Adds API key header
+ * - Generates HMAC-SHA256 signature over path + headers + body
+ * - Sets expiration timestamp
+ *
+ * @param path - Request path (e.g. "/rfqt/v3/levels")
+ * @param body - Request body string (empty string for GET requests)
+ * @param existingHeaders - Any existing headers to include in signature
+ * @param apiKey - Renegade API key
+ * @param apiSecret - Renegade API secret (base64 encoded string)
+ * @returns Complete headers object with authentication
  */
-function decodeBase64(base64: string): Uint8Array {
-  return new Uint8Array(Buffer.from(base64, 'base64'));
-}
+export function generateRenegadeAuthHeaders(
+  path: string,
+  body: string,
+  existingHeaders: Record<string, string>,
+  apiKey: string,
+  apiSecret: string,
+): Record<string, string> {
+  // Clone existing headers to avoid mutation
+  const signedHeaders: Record<string, string> = { ...existingHeaders };
 
-/**
- * Encode a Uint8Array to a base64 string without trailing '=' padding.
- *
- * @param data - Uint8Array to encode
- * @returns Base64 string without padding
- */
-function encodeBase64(data: Uint8Array): string {
-  return Buffer.from(data).toString('base64').replace(/=+$/, '');
+  // Add timestamp and expiry
+  const now = Date.now();
+  const expiry = now + REQUEST_SIGNATURE_DURATION_MS;
+  signedHeaders[RENEGADE_AUTH_EXPIRATION_HEADER] = expiry.toString();
+
+  // Add API key
+  signedHeaders[RENEGADE_API_KEY_HEADER] = apiKey;
+
+  // Decode API secret from base64 to Uint8Array
+  const apiSecretBytes = decodeBase64(apiSecret);
+
+  // Compute the MAC signature using the headers with expiry
+  const signature = computeHmacSignature(
+    path,
+    signedHeaders,
+    body,
+    apiSecretBytes,
+  );
+  signedHeaders[RENEGADE_AUTH_HEADER] = signature;
+
+  // Return new headers object with both auth headers
+  return signedHeaders;
 }
 
 /**
@@ -89,50 +118,21 @@ function computeHmacSignature(
 }
 
 /**
- * Generate authentication headers for Renegade API requests.
+ * Decode a base64 string to a Uint8Array.
  *
- * This function implements the exact authentication scheme required by Renegade:
- * - Adds API key header
- * - Generates HMAC-SHA256 signature over path + headers + body
- * - Sets expiration timestamp
- *
- * @param path - Request path (e.g. "/rfqt/v3/levels")
- * @param body - Request body string (empty string for GET requests)
- * @param existingHeaders - Any existing headers to include in signature
- * @param apiKey - Renegade API key
- * @param apiSecret - Renegade API secret (base64 encoded string)
- * @returns Complete headers object with authentication
+ * @param base64 - Base64 encoded string
+ * @returns Uint8Array decoded from base64
  */
-export function generateRenegadeAuthHeaders(
-  path: string,
-  body: string,
-  existingHeaders: Record<string, string>,
-  apiKey: string,
-  apiSecret: string,
-): Record<string, string> {
-  // Clone existing headers to avoid mutation
-  const signedHeaders: Record<string, string> = { ...existingHeaders };
+function decodeBase64(base64: string): Uint8Array {
+  return new Uint8Array(Buffer.from(base64, 'base64'));
+}
 
-  // Add timestamp and expiry
-  const now = Date.now();
-  const expiry = now + REQUEST_SIGNATURE_DURATION_MS;
-  signedHeaders[RENEGADE_AUTH_EXPIRATION_HEADER] = expiry.toString();
-
-  // Add API key
-  signedHeaders[RENEGADE_API_KEY_HEADER] = apiKey;
-
-  // Decode API secret from base64 to Uint8Array
-  const apiSecretBytes = decodeBase64(apiSecret);
-
-  // Compute the MAC signature using the headers with expiry
-  const signature = computeHmacSignature(
-    path,
-    signedHeaders,
-    body,
-    apiSecretBytes,
-  );
-  signedHeaders[RENEGADE_AUTH_HEADER] = signature;
-
-  // Return new headers object with both auth headers
-  return signedHeaders;
+/**
+ * Encode a Uint8Array to a base64 string without trailing '=' padding.
+ *
+ * @param data - Uint8Array to encode
+ * @returns Base64 string without padding
+ */
+function encodeBase64(data: Uint8Array): string {
+  return Buffer.from(data).toString('base64').replace(/=+$/, '');
 }

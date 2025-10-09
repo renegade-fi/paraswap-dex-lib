@@ -1,5 +1,6 @@
-import { assert } from 'ts-essentials';
 import BigNumber from 'bignumber.js';
+import { assert } from 'ts-essentials';
+import { getBigNumberPow } from '../../bignumber-constants';
 import * as CALLDATA_GAS_COST from '../../calldata-gas-cost';
 import { Network, SwapSide } from '../../constants';
 import { IDexHelper } from '../../dex-helper/idex-helper';
@@ -21,24 +22,24 @@ import {
   TransferFeeParams,
 } from '../../types';
 import { SimpleExchange } from '../simple-exchange';
-import { RateFetcher } from './rate-fetcher';
-import { RenegadeLevelsResponse } from './renegade-levels-response';
-import { RenegadeClient } from './renegade-client';
-import {
-  RenegadeRateFetcherConfig,
-  RenegadeTokenMetadata,
-  RenegadePairData,
-  RenegadeData,
-} from './types';
 import { RenegadeConfig } from './config';
 import {
   RENEGADE_GAS_COST,
   RENEGADE_LEVELS_CACHE_KEY,
   RENEGADE_LEVELS_CACHE_TTL,
-  RENEGADE_LEVELS_POLLING_INTERVAL,
   RENEGADE_TOKEN_METADATA_CACHE_KEY,
   RENEGADE_TOKEN_METADATA_CACHE_TTL,
 } from './constants';
+import { RateFetcher } from './rate-fetcher';
+import { RenegadeClient } from './renegade-client';
+import { RenegadeLevelsResponse } from './renegade-levels-response';
+import {
+  ExternalOrder,
+  RenegadeData,
+  RenegadePairData,
+  RenegadeRateFetcherConfig,
+  RenegadeTokenMetadata,
+} from './types';
 
 export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   readonly hasConstantPriceLargeAmounts = false;
@@ -131,14 +132,14 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
    */
   async setTokensMap(): Promise<void> {
     // Try to get from cache first
-    let metadata = await this.getCachedTokenMetadata();
+    let metadata = await this.getCachedTokens();
 
     if (!metadata) {
       // If not in cache, fetch once
       const success = await this.rateFetcher.fetchTokenMetadataOnce();
       if (success) {
         // Try cache again after fetch
-        metadata = await this.getCachedTokenMetadata();
+        metadata = await this.getCachedTokens();
       }
     }
 
@@ -147,53 +148,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     } else {
       this.logger.warn('Failed to fetch token metadata');
     }
-  }
-
-  /**
-   * Get cached price levels from persistent cache.
-   *
-   * @returns Promise resolving to RenegadeLevelsResponse or null if not available
-   */
-  async getCachedLevels(): Promise<RenegadeLevelsResponse | null> {
-    const cachedLevels = await this.dexHelper.cache.getAndCacheLocally(
-      this.dexKey,
-      this.network,
-      RENEGADE_LEVELS_CACHE_KEY,
-      RENEGADE_LEVELS_CACHE_TTL,
-    );
-
-    if (cachedLevels) {
-      const rawData = JSON.parse(cachedLevels) as {
-        [pairIdentifier: string]: RenegadePairData;
-      };
-      const usdcAddress = RenegadeConfig['Renegade'][this.network].usdcAddress;
-      return new RenegadeLevelsResponse(rawData, usdcAddress);
-    }
-
-    return null;
-  }
-
-  /**
-   * Get cached token metadata from persistent cache.
-   *
-   * @returns Promise resolving to token metadata mapping or null if not available
-   */
-  async getCachedTokenMetadata(): Promise<Record<
-    string,
-    RenegadeTokenMetadata
-  > | null> {
-    const cachedTokens = await this.dexHelper.cache.getAndCacheLocally(
-      this.dexKey,
-      this.network,
-      RENEGADE_TOKEN_METADATA_CACHE_KEY,
-      RENEGADE_TOKEN_METADATA_CACHE_TTL,
-    );
-
-    if (cachedTokens) {
-      return JSON.parse(cachedTokens) as Record<string, RenegadeTokenMetadata>;
-    }
-
-    return null;
   }
 
   /**
@@ -223,8 +177,7 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
         return [];
       }
 
-      const pairContext = levels.resolvePair(srcToken, destToken);
-      if (!pairContext) {
+      if (!levels.hasPair(srcToken, destToken)) {
         return [];
       }
 
@@ -266,55 +219,39 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       return null;
     }
 
-    // resolvePair maps ParaSwap's src/dest into Renegade's fixed base (non-USDC) / quote (USDC) ordering.
-    const pairContext = levels.resolvePair(srcToken, destToken);
-    if (!pairContext) {
-      return null;
-    }
+    // Price from Renegade is always in units of USDC / baseToken
+    const price = levels.getPrice(srcToken, destToken);
 
-    // Renegade surfaces a single midpoint level; supplying base hits bids, supplying USDC hits asks.
-    const midpoint = levels.getMidpointLevel(pairContext);
-    if (!midpoint) {
-      return null;
-    }
-
-    const [priceStr] = midpoint;
-
-    // Renegade quotes every pair as base (non-USDC) over quote (USDC): price is USDC per base token, size is reported in base units.
-    const price = new BigNumber(priceStr);
-
-    const baseToken = pairContext.baseToken;
-    const quoteToken = pairContext.quoteToken;
-    const srcIsBase = pairContext.srcIsBase;
-    const srcIsUSDC =
-      srcToken.address.toLowerCase() ===
-      this.getUSDCAddress(this.network).toLowerCase();
+    const [inputDecimals, outputDecimals] =
+      side === SwapSide.SELL
+        ? [srcToken.decimals, destToken.decimals]
+        : [destToken.decimals, srcToken.decimals];
 
     const prices = amounts.map(amount => {
-      // v0 implementation: assume the midpoint level has enough size and ignore partial fill calculations.
-      if (srcIsBase) {
-        if (side === SwapSide.SELL) {
-          const baseDecimal = convertToDecimal(amount, baseToken.decimals);
-          const quoteDecimal = baseDecimal.multipliedBy(price);
-          return convertFromDecimal(quoteDecimal, quoteToken.decimals);
-        }
-        // amount is in units of quote token
-        const quoteDecimal = convertToDecimal(amount, quoteToken.decimals);
-        const baseDecimal = quoteDecimal.dividedBy(price);
-        return convertFromDecimal(baseDecimal, baseToken.decimals); // units of base token
-      }
-      if (side === SwapSide.SELL) {
-        const quoteDecimal = convertToDecimal(amount, quoteToken.decimals);
-        const baseDecimal = quoteDecimal.dividedBy(price);
-        return convertFromDecimal(baseDecimal, baseToken.decimals);
-      }
-      const baseDecimal = convertToDecimal(amount, baseToken.decimals);
-      const quoteDecimal = baseDecimal.multipliedBy(price);
-      return convertFromDecimal(quoteDecimal, quoteToken.decimals);
+      const inputAmount = convertToDecimal(amount, inputDecimals);
+
+      const isSrcUSDC =
+        srcToken.address.toLowerCase() ===
+        this.getUSDCAddress(this.network).toLowerCase();
+
+      const isDestUSDC =
+        destToken.address.toLowerCase() ===
+        this.getUSDCAddress(this.network).toLowerCase();
+
+      const isInputUSDC =
+        (side === SwapSide.SELL && isSrcUSDC) ||
+        (side === SwapSide.BUY && isDestUSDC);
+
+      // Normalize price so it is in units of outputAmount / inputAmount
+      const correctedPrice = isInputUSDC
+        ? BigNumber(1).dividedBy(price)
+        : price;
+
+      let outputAmount = inputAmount.multipliedBy(correctedPrice);
+
+      return convertFromDecimal(outputAmount, outputDecimals);
     });
 
-    const unitDecimals =
-      side === SwapSide.SELL ? destToken.decimals : srcToken.decimals;
     const poolIdentifier = this.getPoolIdentifier(
       srcToken.address,
       destToken.address,
@@ -323,7 +260,7 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     return [
       {
         prices,
-        unit: BigInt(unitDecimals),
+        unit: BigInt(outputDecimals),
         data: {},
         poolIdentifiers: [poolIdentifier],
         exchange: this.dexKey,
@@ -485,6 +422,22 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     };
   }
 
+  getCalldataGasCost(poolPrices: PoolPrices<RenegadeData>): number | number[] {
+    // TODO: Implement gas cost calculation
+    return CALLDATA_GAS_COST.DEX_OVERHEAD;
+  }
+
+  getAdapters(side?: SwapSide): { name: string; index: number }[] | null {
+    // TODO: Implement adapters
+    return null;
+  }
+
+  async releaseResources(): Promise<void> {
+    if (!this.dexHelper.config.isSlave) {
+      this.rateFetcher.stop();
+    }
+  }
+
   async preProcessTransaction(
     optimalSwapExchange: OptimalSwapExchange<RenegadeData>,
     srcToken: Token,
@@ -500,18 +453,22 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       options,
     });
     const usdcAddress = this.getUSDCAddress(this.network).toLowerCase();
+
+    const isSrcUSDC =
+      srcToken.address.toLowerCase() ===
+      this.getUSDCAddress(this.network).toLowerCase();
+
+    const isDestUSDC =
+      destToken.address.toLowerCase() ===
+      this.getUSDCAddress(this.network).toLowerCase();
+
     const srcIsUSDC = srcToken.address.toLowerCase() === usdcAddress;
     const destIsUSDC = destToken.address.toLowerCase() === usdcAddress;
-
-    assert(
-      srcIsUSDC !== destIsUSDC,
-      `${this.dexKey}-${this.network}: Unsupported pair for RFQ`,
-    );
 
     const baseToken = srcIsUSDC ? destToken : srcToken;
     const quoteToken = srcIsUSDC ? srcToken : destToken;
 
-    const orderSide: 'Buy' | 'Sell' = srcIsUSDC ? 'Buy' : 'Sell';
+    const renegadeSide: 'Buy' | 'Sell' = srcIsUSDC ? 'Buy' : 'Sell';
 
     const baseAmountZero = '0';
     const quoteAmountZero = '0';
@@ -525,50 +482,58 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     const srcAmount = optimalSwapExchange.srcAmount;
     const destAmount = optimalSwapExchange.destAmount;
 
-    if (orderSide === 'Sell') {
-      if (side === SwapSide.SELL) {
-        // surplus = receivedAmount - destAmount
+    // if (renegadeSide === 'Sell') {
+    //   if (side === SwapSide.SELL) {
+    //     // surplus = receivedAmount - destAmount
 
-        baseAmount = srcAmount;
-        minFillSize = baseAmount;
+    //     baseAmount = srcAmount;
+    //     minFillSize = baseAmount;
+    //   } else {
+    //     // surplus = srcAmount - spentAmount
 
-        // exactQuoteOutput = destAmount;
-      } else {
-        // surplus = srcAmount - spentAmount
+    //     exactQuoteOutput = destAmount;
+    //   }
+    // } else {
+    //   if (side === SwapSide.SELL) {
+    //     // surplus = receivedAmount - destAmount
 
-        // baseAmount = srcAmount;
-        // minFillSize = baseAmount;
+    //     quoteAmount = srcAmount;
+    //     minFillSize = quoteAmount;
+    //   } else {
+    //     // surplus = srcAmount - spentAmount
 
-        exactQuoteOutput = destAmount;
-      }
+    //     exactBaseOutput = destAmount;
+    //   }
+    // }
+
+    // const externalOrder = {
+    //   quote_mint: quoteToken.address,
+    //   base_mint: baseToken.address,
+    //   side: renegadeSide,
+    //   base_amount: baseAmount,
+    //   quote_amount: quoteAmount,
+    //   exact_base_output: exactBaseOutput,
+    //   exact_quote_output: exactQuoteOutput,
+    //   min_fill_size: minFillSize,
+    // };
+
+    let externalOrder: ExternalOrder;
+
+    if (side === SwapSide.SELL) {
+      externalOrder = this.constructExactAmountInOrder(
+        srcToken.address,
+        destToken.address,
+        srcAmount,
+        renegadeSide,
+      );
     } else {
-      if (side === SwapSide.SELL) {
-        // surplus = receivedAmount - destAmount
-
-        // exactBaseOutput = destAmount;
-
-        quoteAmount = srcAmount;
-        minFillSize = quoteAmount;
-      } else {
-        // surplus = srcAmount - spentAmount
-
-        // quoteAmount = srcAmount;
-        // minFillSize = quoteAmount;
-
-        exactBaseOutput = destAmount;
-      }
+      externalOrder = this.constructExactAmountOutOrder(
+        srcToken.address,
+        destToken.address,
+        destAmount,
+        renegadeSide,
+      );
     }
-
-    const externalOrder = {
-      quote_mint: quoteToken.address,
-      base_mint: baseToken.address,
-      side: orderSide,
-      base_amount: baseAmount,
-      quote_amount: quoteAmount,
-      exact_base_output: exactBaseOutput,
-      exact_quote_output: exactQuoteOutput,
-      min_fill_size: minFillSize,
-    };
 
     const response = await this.renegadeClient.requestExternalMatch(
       externalOrder,
@@ -586,7 +551,7 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       `${this.dexKey}-${this.network}: Invalid RFQ response`,
     );
 
-    const enrichedExchange: OptimalSwapExchange<RenegadeData> = {
+    const exchangeWithData: OptimalSwapExchange<RenegadeData> = {
       ...optimalSwapExchange,
       data: {
         settlementTx,
@@ -594,36 +559,114 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       },
     };
 
-    return [enrichedExchange, {}];
+    return [exchangeWithData, {}];
   }
 
-  getCalldataGasCost(poolPrices: PoolPrices<RenegadeData>): number | number[] {
-    // TODO: Implement gas cost calculation
-    return CALLDATA_GAS_COST.DEX_OVERHEAD;
+  /** ParaSwap side is always Sell */
+  constructExactAmountInOrder(
+    srcMint: string,
+    destMint: string,
+    srcAmount: string,
+    renegadeSide: 'Buy' | 'Sell',
+  ): ExternalOrder {
+    const minFillSize = renegadeSide === 'Sell' ? srcAmount : '0';
+    const baseAmount = renegadeSide === 'Sell' ? srcAmount : '0';
+    const quoteAmount = renegadeSide === 'Sell' ? '0' : srcAmount;
+
+    const isSrcUSDC =
+      srcMint.toLowerCase() === this.getUSDCAddress(this.network).toLowerCase();
+
+    const quoteMint = isSrcUSDC ? srcMint : destMint;
+    const baseMint = isSrcUSDC ? destMint : srcMint;
+
+    return {
+      quote_mint: quoteMint,
+      base_mint: baseMint,
+      side: renegadeSide,
+      base_amount: baseAmount,
+      quote_amount: quoteAmount,
+      min_fill_size: minFillSize,
+      exact_base_output: '0',
+      exact_quote_output: '0',
+    };
   }
 
-  getAdapters(side?: SwapSide): { name: string; index: number }[] | null {
-    // TODO: Implement adapters
+  /** ParaSwap side is always Buy */
+  constructExactAmountOutOrder(
+    srcMint: string,
+    destMint: string,
+    destAmount: string,
+    renegadeSide: 'Buy' | 'Sell',
+  ): ExternalOrder {
+    const exactQuoteOutput = renegadeSide === 'Sell' ? destAmount : '0';
+    const exactBaseOutput = renegadeSide === 'Sell' ? '0' : destAmount;
+
+    const isSrcUSDC =
+      srcMint.toLowerCase() === this.getUSDCAddress(this.network).toLowerCase();
+    const quoteMint = isSrcUSDC ? srcMint : destMint;
+    const baseMint = isSrcUSDC ? destMint : srcMint;
+
+    return {
+      quote_mint: quoteMint,
+      base_mint: baseMint,
+      side: renegadeSide,
+      base_amount: '0',
+      quote_amount: '0',
+      min_fill_size: '0',
+      exact_base_output: exactBaseOutput,
+      exact_quote_output: exactQuoteOutput,
+    };
+  }
+
+  /**
+   * Get cached price levels from persistent cache.
+   *
+   * @returns Promise resolving to RenegadeLevelsResponse or null if not available
+   */
+  async getCachedLevels(): Promise<RenegadeLevelsResponse | null> {
+    const cachedLevels = await this.dexHelper.cache.getAndCacheLocally(
+      this.dexKey,
+      this.network,
+      RENEGADE_LEVELS_CACHE_KEY,
+      RENEGADE_LEVELS_CACHE_TTL,
+    );
+
+    if (cachedLevels) {
+      const rawData = JSON.parse(cachedLevels) as {
+        [pairIdentifier: string]: RenegadePairData;
+      };
+      const usdcAddress = RenegadeConfig['Renegade'][this.network].usdcAddress;
+      return new RenegadeLevelsResponse(rawData, usdcAddress);
+    }
+
     return null;
   }
 
-  async releaseResources(): Promise<void> {
-    if (!this.dexHelper.config.isSlave) {
-      this.rateFetcher.stop();
+  /**
+   * Get cached token metadata from persistent cache.
+   *
+   * @returns Promise resolving to token metadata mapping or null if not available
+   */
+  async getCachedTokens(): Promise<Record<
+    string,
+    RenegadeTokenMetadata
+  > | null> {
+    const cachedTokens = await this.dexHelper.cache.getAndCacheLocally(
+      this.dexKey,
+      this.network,
+      RENEGADE_TOKEN_METADATA_CACHE_KEY,
+      RENEGADE_TOKEN_METADATA_CACHE_TTL,
+    );
+
+    if (cachedTokens) {
+      return JSON.parse(cachedTokens) as Record<string, RenegadeTokenMetadata>;
     }
+
+    return null;
   }
 
   getTokenFromAddress(address: Address): Token {
     const tokenMetadata = this.tokensMap[address.toLowerCase()];
-    if (!tokenMetadata) {
-      // Return a basic token object if metadata is not available
-      // This can happen during initialization or for tokens not in the mapping
-      return {
-        address,
-        decimals: 18, // Default to 18 decimals
-        symbol: 'UNKNOWN',
-      };
-    }
     return {
       address: tokenMetadata.address,
       decimals: tokenMetadata.decimals,
@@ -677,8 +720,8 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
  * @param decimals - The number of decimal places for the token
  * @returns The decimal representation as BigNumber
  */
-export function convertToDecimal(amount: bigint, decimals: number): BigNumber {
-  const decimalAdjustment = new BigNumber(10).pow(decimals);
+function convertToDecimal(amount: bigint, decimals: number): BigNumber {
+  const decimalAdjustment = getBigNumberPow(decimals);
   return new BigNumber(amount.toString()).dividedBy(decimalAdjustment);
 }
 
@@ -689,11 +732,8 @@ export function convertToDecimal(amount: bigint, decimals: number): BigNumber {
  * @param decimals - The number of decimal places for the token
  * @returns The atomic amount as bigint
  */
-export function convertFromDecimal(
-  amount: BigNumber,
-  decimals: number,
-): bigint {
-  const decimalAdjustment = new BigNumber(10).pow(decimals);
+function convertFromDecimal(amount: BigNumber, decimals: number): bigint {
+  const decimalAdjustment = getBigNumberPow(decimals);
   const atomicAmount = amount.multipliedBy(decimalAdjustment);
   return BigInt(
     atomicAmount.decimalPlaces(0, BigNumber.ROUND_FLOOR).toFixed(0),
