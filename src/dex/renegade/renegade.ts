@@ -452,70 +452,8 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       side,
       options,
     });
-    const usdcAddress = this.getUSDCAddress(this.network).toLowerCase();
-
-    const isSrcUSDC =
-      srcToken.address.toLowerCase() ===
-      this.getUSDCAddress(this.network).toLowerCase();
-
-    const isDestUSDC =
-      destToken.address.toLowerCase() ===
-      this.getUSDCAddress(this.network).toLowerCase();
-
-    const srcIsUSDC = srcToken.address.toLowerCase() === usdcAddress;
-    const destIsUSDC = destToken.address.toLowerCase() === usdcAddress;
-
-    const baseToken = srcIsUSDC ? destToken : srcToken;
-    const quoteToken = srcIsUSDC ? srcToken : destToken;
-
-    const renegadeSide: 'Buy' | 'Sell' = srcIsUSDC ? 'Buy' : 'Sell';
-
-    const baseAmountZero = '0';
-    const quoteAmountZero = '0';
-
-    let baseAmount = baseAmountZero;
-    let quoteAmount = quoteAmountZero;
-    let exactBaseOutput = baseAmountZero;
-    let exactQuoteOutput = quoteAmountZero;
-    let minFillSize = '0';
-
     const srcAmount = optimalSwapExchange.srcAmount;
     const destAmount = optimalSwapExchange.destAmount;
-
-    // if (renegadeSide === 'Sell') {
-    //   if (side === SwapSide.SELL) {
-    //     // surplus = receivedAmount - destAmount
-
-    //     baseAmount = srcAmount;
-    //     minFillSize = baseAmount;
-    //   } else {
-    //     // surplus = srcAmount - spentAmount
-
-    //     exactQuoteOutput = destAmount;
-    //   }
-    // } else {
-    //   if (side === SwapSide.SELL) {
-    //     // surplus = receivedAmount - destAmount
-
-    //     quoteAmount = srcAmount;
-    //     minFillSize = quoteAmount;
-    //   } else {
-    //     // surplus = srcAmount - spentAmount
-
-    //     exactBaseOutput = destAmount;
-    //   }
-    // }
-
-    // const externalOrder = {
-    //   quote_mint: quoteToken.address,
-    //   base_mint: baseToken.address,
-    //   side: renegadeSide,
-    //   base_amount: baseAmount,
-    //   quote_amount: quoteAmount,
-    //   exact_base_output: exactBaseOutput,
-    //   exact_quote_output: exactQuoteOutput,
-    //   min_fill_size: minFillSize,
-    // };
 
     let externalOrder: ExternalOrder;
 
@@ -524,14 +462,12 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
         srcToken.address,
         destToken.address,
         srcAmount,
-        renegadeSide,
       );
     } else {
       externalOrder = this.constructExactAmountOutOrder(
         srcToken.address,
         destToken.address,
         destAmount,
-        renegadeSide,
       );
     }
 
@@ -567,17 +503,18 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     srcMint: string,
     destMint: string,
     srcAmount: string,
-    renegadeSide: 'Buy' | 'Sell',
   ): ExternalOrder {
-    const minFillSize = renegadeSide === 'Sell' ? srcAmount : '0';
-    const baseAmount = renegadeSide === 'Sell' ? srcAmount : '0';
-    const quoteAmount = renegadeSide === 'Sell' ? '0' : srcAmount;
+    const renegadeSide =
+      destMint.toLowerCase() === this.getUSDCAddress(this.network).toLowerCase()
+        ? 'Sell'
+        : 'Buy';
+    const isRenegadeSell = renegadeSide === 'Sell';
+    const minFillSize = isRenegadeSell ? srcAmount : '0';
+    const baseAmount = isRenegadeSell ? srcAmount : '0';
+    const quoteAmount = isRenegadeSell ? '0' : srcAmount;
 
-    const isSrcUSDC =
-      srcMint.toLowerCase() === this.getUSDCAddress(this.network).toLowerCase();
-
-    const quoteMint = isSrcUSDC ? srcMint : destMint;
-    const baseMint = isSrcUSDC ? destMint : srcMint;
+    const quoteMint = isRenegadeSell ? destMint : srcMint;
+    const baseMint = isRenegadeSell ? srcMint : destMint;
 
     return {
       quote_mint: quoteMint,
@@ -596,15 +533,17 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     srcMint: string,
     destMint: string,
     destAmount: string,
-    renegadeSide: 'Buy' | 'Sell',
   ): ExternalOrder {
-    const exactQuoteOutput = renegadeSide === 'Sell' ? destAmount : '0';
-    const exactBaseOutput = renegadeSide === 'Sell' ? '0' : destAmount;
+    const renegadeSide =
+      destMint.toLowerCase() === this.getUSDCAddress(this.network).toLowerCase()
+        ? 'Sell'
+        : 'Buy';
+    const isRenegadeSell = renegadeSide === 'Sell';
+    const exactQuoteOutput = isRenegadeSell ? destAmount : '0';
+    const exactBaseOutput = isRenegadeSell ? '0' : destAmount;
 
-    const isSrcUSDC =
-      srcMint.toLowerCase() === this.getUSDCAddress(this.network).toLowerCase();
-    const quoteMint = isSrcUSDC ? srcMint : destMint;
-    const baseMint = isSrcUSDC ? destMint : srcMint;
+    const quoteMint = isRenegadeSell ? destMint : srcMint;
+    const baseMint = isRenegadeSell ? srcMint : destMint;
 
     return {
       quote_mint: quoteMint,
