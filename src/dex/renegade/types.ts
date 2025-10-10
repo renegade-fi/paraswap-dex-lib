@@ -42,13 +42,6 @@ export type RenegadeData = {
   rawResponse?: SponsoredMatchResponse;
 };
 
-// Cache entry for storing signed quotes per token pair
-export type RenegadeQuoteCacheEntry = {
-  price: string; // Price in USDC per base token
-  timestamp: number;
-  signedQuote: SignedExternalQuote;
-};
-
 // Configuration parameters for Renegade DEX per network
 export type DexParams = {
   usdcAddress: string;
