@@ -13,6 +13,9 @@ export const RENEGADE_BASE_BASE_URL =
 export const RENEGADE_LEVELS_ENDPOINT = '/rfqt/v3/levels';
 export const RENEGADE_MATCH_ENDPOINT =
   '/v0/matching-engine/request-external-match';
+export const RENEGADE_QUOTE_ENDPOINT = '/v0/matching-engine/quote';
+export const RENEGADE_ASSEMBLE_ENDPOINT =
+  '/v0/matching-engine/assemble-external-match';
 
 /**
  * Get Renegade API base URL for a specific network.
@@ -39,6 +42,9 @@ export const RENEGADE_LEVELS_CACHE_KEY = 'renegade_levels';
 
 export const RENEGADE_TOKEN_METADATA_CACHE_TTL = 3600; // 1 hour in seconds
 export const RENEGADE_TOKEN_METADATA_CACHE_KEY = 'renegade_token_metadata';
+
+export const RENEGADE_QUOTE_CACHE_TTL = 5; // 5 seconds
+export const RENEGADE_QUOTE_CACHE_KEY = 'renegade_quote';
 
 // API timeout settings
 export const RENEGADE_API_TIMEOUT_MS = 10000; // 10 seconds

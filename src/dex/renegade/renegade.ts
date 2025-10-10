@@ -29,6 +29,8 @@ import {
   RENEGADE_LEVELS_CACHE_TTL,
   RENEGADE_TOKEN_METADATA_CACHE_KEY,
   RENEGADE_TOKEN_METADATA_CACHE_TTL,
+  RENEGADE_QUOTE_CACHE_KEY,
+  RENEGADE_QUOTE_CACHE_TTL,
 } from './constants';
 import { RateFetcher } from './rate-fetcher';
 import { RenegadeClient } from './renegade-client';
@@ -37,7 +39,10 @@ import {
   ExternalOrder,
   RenegadeData,
   RenegadePairData,
+  RenegadeQuoteCacheEntry,
   RenegadeRateFetcherConfig,
+  RenegadeTx,
+  SignedExternalQuote,
 } from './types';
 
 export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
@@ -202,48 +207,128 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     isFirstSwap?: boolean,
   ): Promise<ExchangePrices<RenegadeData> | null> {
     try {
-      const levels = await this.getCachedLevels();
-      if (!levels) {
+      if (amounts.length === 0) {
         return null;
       }
 
-      // Price from Renegade is always in units of USDC / baseToken
-      const price = levels.getPrice(srcToken, destToken);
+      // Use the last amount as reference for the quote
+      const referenceAmount = amounts[amounts.length - 1].toString();
 
-      const [inputDecimals, outputDecimals] =
-        side === SwapSide.SELL
-          ? [srcToken.decimals, destToken.decimals]
-          : [destToken.decimals, srcToken.decimals];
+      // Determine tokens and Renegade side
+      const usdcAddress = this.getUSDCAddress(this.network);
+      const renegadeSide = this.getRenegadeSide(srcToken, destToken);
 
+      // Determine base and quote mints (quote is always USDC)
+      const isDestUSDC =
+        destToken.address.toLowerCase() === usdcAddress.toLowerCase();
+      const baseMint = isDestUSDC ? srcToken.address : destToken.address;
+      const quoteMint = usdcAddress;
+
+      // Construct external order following the same rules as createUpdatedOrderForExactIn/Out
+      let externalOrder: ExternalOrder;
+
+      if (side === SwapSide.SELL) {
+        // Exact input - same logic as createUpdatedOrderForExactIn
+        const isRenegadeSell = renegadeSide === 'Sell';
+
+        // For exact input, we specify the input amount
+        // If Renegade Sell: base is input (base_amount)
+        // If Renegade Buy: quote is input (quote_amount)
+        const baseAmount = isRenegadeSell ? referenceAmount : '0';
+        const quoteAmount = isRenegadeSell ? '0' : referenceAmount;
+        const minFillSize = isRenegadeSell ? referenceAmount : '0';
+
+        externalOrder = {
+          quote_mint: quoteMint,
+          base_mint: baseMint,
+          side: renegadeSide,
+          base_amount: baseAmount,
+          quote_amount: quoteAmount,
+          min_fill_size: minFillSize,
+          exact_base_output: '0',
+          exact_quote_output: '0',
+        };
+      } else {
+        // Exact output - same logic as createUpdatedOrderForExactOut
+        const isRenegadeSell = renegadeSide === 'Sell';
+
+        // For exact output, we specify the output amount
+        // If Renegade Sell: quote is output (exact_quote_output)
+        // If Renegade Buy: base is output (exact_base_output)
+        const exactQuoteOutput = isRenegadeSell ? referenceAmount : '0';
+        const exactBaseOutput = isRenegadeSell ? '0' : referenceAmount;
+
+        externalOrder = {
+          quote_mint: quoteMint,
+          base_mint: baseMint,
+          side: renegadeSide,
+          base_amount: '0',
+          quote_amount: '0',
+          min_fill_size: '0', // MUST be 0 with exact outputs
+          exact_base_output: exactBaseOutput,
+          exact_quote_output: exactQuoteOutput,
+        };
+      }
+
+      // Fetch quote from Renegade API
+      const quoteResponse = await this.renegadeClient.requestQuote(
+        externalOrder,
+      );
+
+      // Cache the signed quote for later use in preProcessTransaction
+      const sortedAddresses = this._sortTokens(
+        srcToken.address,
+        destToken.address,
+      );
+      const cacheKey = `${RENEGADE_QUOTE_CACHE_KEY}_${sortedAddresses[0]}_${sortedAddresses[1]}_${renegadeSide}`;
+
+      // Extract send/receive from quote
+      const send = quoteResponse.signed_quote.quote.send;
+      const receive = quoteResponse.signed_quote.quote.receive;
+
+      // Determine input and output tokens for rate calculation
+      const inputToken = side === SwapSide.SELL ? srcToken : destToken;
+      const outputToken = side === SwapSide.SELL ? destToken : srcToken;
+
+      // Identify which is input and which is output in send/receive
+      const isSendInput =
+        send.mint.toLowerCase() === inputToken.address.toLowerCase();
+      const inputAmount = isSendInput ? send.amount : receive.amount;
+      const outputAmount = isSendInput ? receive.amount : send.amount;
+
+      // Calculate rate: output per input (in atomic units)
+      const rate = new BigNumber(outputAmount).dividedBy(inputAmount);
+
+      // Store the signed quote in cache with calculated rate as price for reference
+      const cacheEntry: RenegadeQuoteCacheEntry = {
+        price: rate.toString(),
+        timestamp: Date.now(),
+        signedQuote: quoteResponse.signed_quote,
+      };
+
+      await this.dexHelper.cache.setex(
+        this.dexKey,
+        this.network,
+        cacheKey,
+        RENEGADE_QUOTE_CACHE_TTL,
+        JSON.stringify(cacheEntry),
+      );
+
+      // Apply rate to all amounts
       const prices = amounts.map(amount => {
-        const inputAmount = convertToDecimal(amount, inputDecimals);
-
-        const isSrcUSDC =
-          srcToken.address.toLowerCase() ===
-          this.getUSDCAddress(this.network).toLowerCase();
-
-        const isDestUSDC =
-          destToken.address.toLowerCase() ===
-          this.getUSDCAddress(this.network).toLowerCase();
-
-        const isInputUSDC =
-          (side === SwapSide.SELL && isSrcUSDC) ||
-          (side === SwapSide.BUY && isDestUSDC);
-
-        // Normalize price so it is in units of outputAmount / inputAmount
-        const correctedPrice = isInputUSDC
-          ? BigNumber(1).dividedBy(price)
-          : price;
-
-        let outputAmount = inputAmount.multipliedBy(correctedPrice);
-
-        return convertFromDecimal(outputAmount, outputDecimals);
+        const output = new BigNumber(amount.toString()).multipliedBy(rate);
+        return BigInt(
+          output.decimalPlaces(0, BigNumber.ROUND_FLOOR).toFixed(0),
+        );
       });
 
       const poolIdentifier = this.getPoolIdentifier(
         srcToken.address,
         destToken.address,
       );
+
+      const outputDecimals =
+        side === SwapSide.SELL ? destToken.decimals : srcToken.decimals;
 
       return [
         {
@@ -415,32 +500,57 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       const srcAmount = optimalSwapExchange.srcAmount;
       const destAmount = optimalSwapExchange.destAmount;
 
-      let externalOrder: ExternalOrder;
+      // 1. Retrieve cached signed quote for the pair (now side-specific)
+      const cachedSignedQuote = await this.getCachedSignedQuote(
+        srcToken,
+        destToken,
+      );
 
-      if (side === SwapSide.SELL) {
-        externalOrder = this.constructExactAmountInOrder(
-          srcToken.address,
-          destToken.address,
-          srcAmount,
-        );
-      } else {
-        externalOrder = this.constructExactAmountOutOrder(
-          srcToken.address,
-          destToken.address,
-          destAmount,
+      if (!cachedSignedQuote) {
+        throw new Error(
+          `${this.dexKey}-${this.network}: No cached quote available for pair ${srcToken.address}-${destToken.address}`,
         );
       }
 
-      const response = await this.renegadeClient.requestExternalMatch(
-        externalOrder,
+      // 2. Create updated order with actual amounts (preserving side and token pair)
+      const updatedOrder =
+        side === SwapSide.SELL
+          ? this.createUpdatedOrderForExactIn(
+              cachedSignedQuote,
+              srcToken,
+              destToken,
+              srcAmount,
+            )
+          : this.createUpdatedOrderForExactOut(
+              cachedSignedQuote,
+              srcToken,
+              destToken,
+              destAmount,
+            );
+
+      // 3. Call assembleExternalMatch with signed quote and updated order
+      const response = await this.renegadeClient.assembleExternalMatch(
+        cachedSignedQuote,
+        {
+          updated_order: updatedOrder,
+          disable_gas_sponsorship: true,
+        },
       );
 
-      const settlementTx = response?.match_bundle?.settlement_tx ?? undefined;
+      // 4. Extract settlement transaction from match bundle
+      const settlementTxRequest = response?.match_bundle?.settlement_tx;
 
       assert(
-        settlementTx !== undefined,
-        `${this.dexKey}-${this.network}: Invalid RFQ response`,
+        settlementTxRequest !== undefined,
+        `${this.dexKey}-${this.network}: Invalid match response`,
       );
+
+      // 5. Convert TransactionRequest to RenegadeTx format
+      const settlementTx: RenegadeTx = {
+        to: settlementTxRequest.to || '',
+        data: settlementTxRequest.data || settlementTxRequest.input || '',
+        value: settlementTxRequest.value || '0',
+      };
 
       const exchangeWithData: OptimalSwapExchange<RenegadeData> = {
         ...optimalSwapExchange,
@@ -458,28 +568,44 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     }
   }
 
-  /** ParaSwap side is always Sell */
-  constructExactAmountInOrder(
-    srcMint: string,
-    destMint: string,
+  /**
+   * Create updated order for exact input (ParaSwap SELL side).
+   * Preserves token pair and side from cached quote, updates amounts only.
+   *
+   * @param signedQuote - Cached signed quote
+   * @param srcToken - Source token
+   * @param destToken - Destination token
+   * @param srcAmount - Source amount to swap
+   * @returns Updated external order
+   */
+  private createUpdatedOrderForExactIn(
+    signedQuote: SignedExternalQuote,
+    srcToken: Token,
+    destToken: Token,
     srcAmount: string,
   ): ExternalOrder {
-    const renegadeSide =
-      destMint.toLowerCase() === this.getUSDCAddress(this.network).toLowerCase()
-        ? 'Sell'
-        : 'Buy';
-    const isRenegadeSell = renegadeSide === 'Sell';
-    const minFillSize = isRenegadeSell ? srcAmount : '0';
+    const baseOrder = signedQuote.quote.order;
+
+    // MUST preserve these fields (cannot change)
+    const quoteMint = baseOrder.quote_mint;
+    const baseMint = baseOrder.base_mint;
+    const side = baseOrder.side;
+
+    // Determine which amount field to set based on Renegade side
+    // Rule: Exactly ONE sizing parameter must be non-zero
+    const isRenegadeSell = side === 'Sell';
+
+    // For exact input, we specify the input amount
+    // If Renegade Sell: base is input (base_amount)
+    // If Renegade Buy: quote is input (quote_amount)
     const baseAmount = isRenegadeSell ? srcAmount : '0';
     const quoteAmount = isRenegadeSell ? '0' : srcAmount;
-
-    const quoteMint = isRenegadeSell ? destMint : srcMint;
-    const baseMint = isRenegadeSell ? srcMint : destMint;
+    const minFillSize = isRenegadeSell ? srcAmount : '0';
 
     return {
       quote_mint: quoteMint,
       base_mint: baseMint,
-      side: renegadeSide,
+      side: side,
       base_amount: baseAmount,
       quote_amount: quoteAmount,
       min_fill_size: minFillSize,
@@ -488,33 +614,109 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     };
   }
 
-  /** ParaSwap side is always Buy */
-  constructExactAmountOutOrder(
-    srcMint: string,
-    destMint: string,
+  /**
+   * Create updated order for exact output (ParaSwap BUY side).
+   * Preserves token pair and side from cached quote, updates amounts only.
+   *
+   * @param signedQuote - Cached signed quote
+   * @param srcToken - Source token
+   * @param destToken - Destination token
+   * @param destAmount - Destination amount to receive
+   * @returns Updated external order
+   */
+  private createUpdatedOrderForExactOut(
+    signedQuote: SignedExternalQuote,
+    srcToken: Token,
+    destToken: Token,
     destAmount: string,
   ): ExternalOrder {
-    const renegadeSide =
-      destMint.toLowerCase() === this.getUSDCAddress(this.network).toLowerCase()
-        ? 'Sell'
-        : 'Buy';
-    const isRenegadeSell = renegadeSide === 'Sell';
+    const baseOrder = signedQuote.quote.order;
+
+    // MUST preserve these fields (cannot change)
+    const quoteMint = baseOrder.quote_mint;
+    const baseMint = baseOrder.base_mint;
+    const side = baseOrder.side;
+
+    // Determine which exact output field to set based on Renegade side
+    // Rule: Exactly ONE sizing parameter must be non-zero
+    // Rule: When using exact outputs, min_fill_size MUST be 0
+    const isRenegadeSell = side === 'Sell';
+
+    // For exact output, we specify the output amount
+    // If Renegade Sell: quote is output (exact_quote_output)
+    // If Renegade Buy: base is output (exact_base_output)
     const exactQuoteOutput = isRenegadeSell ? destAmount : '0';
     const exactBaseOutput = isRenegadeSell ? '0' : destAmount;
-
-    const quoteMint = isRenegadeSell ? destMint : srcMint;
-    const baseMint = isRenegadeSell ? srcMint : destMint;
 
     return {
       quote_mint: quoteMint,
       base_mint: baseMint,
-      side: renegadeSide,
+      side: side,
       base_amount: '0',
       quote_amount: '0',
-      min_fill_size: '0',
+      min_fill_size: '0', // MUST be 0 with exact outputs
       exact_base_output: exactBaseOutput,
       exact_quote_output: exactQuoteOutput,
     };
+  }
+
+  /**
+   * Determine Renegade side based on which token is USDC.
+   *
+   * @param srcToken - Source token
+   * @param destToken - Destination token
+   * @returns 'Sell' if dest is USDC (base → USDC), 'Buy' if src is USDC (USDC → base)
+   */
+  private getRenegadeSide(srcToken: Token, destToken: Token): 'Buy' | 'Sell' {
+    const usdcAddress = this.getUSDCAddress(this.network);
+    const isDestUSDC =
+      destToken.address.toLowerCase() === usdcAddress.toLowerCase();
+    return isDestUSDC ? 'Sell' : 'Buy';
+  }
+
+  /**
+   * Get cached signed quote for a token pair and side.
+   *
+   * @param srcToken - Source token for the swap
+   * @param destToken - Destination token for the swap
+   * @returns Promise resolving to SignedExternalQuote or null if not available
+   */
+  async getCachedSignedQuote(
+    srcToken: Token,
+    destToken: Token,
+  ): Promise<SignedExternalQuote | null> {
+    try {
+      // Determine Renegade side based on which token is USDC
+      const renegadeSide = this.getRenegadeSide(srcToken, destToken);
+
+      // Build cache key from alphabetically sorted token addresses and side
+      const sortedAddresses = this._sortTokens(
+        srcToken.address,
+        destToken.address,
+      );
+      const cacheKey = `${RENEGADE_QUOTE_CACHE_KEY}_${sortedAddresses[0]}_${sortedAddresses[1]}_${renegadeSide}`;
+
+      // Check cache for existing quote
+      const cachedQuote = await this.dexHelper.cache.getAndCacheLocally(
+        this.dexKey,
+        this.network,
+        cacheKey,
+        RENEGADE_QUOTE_CACHE_TTL,
+      );
+
+      if (cachedQuote) {
+        const cacheEntry = JSON.parse(cachedQuote) as RenegadeQuoteCacheEntry;
+        return cacheEntry.signedQuote;
+      }
+
+      return null;
+    } catch (e: unknown) {
+      this.logger.error(
+        `Error retrieving cached quote for ${srcToken.address}-${destToken.address}:`,
+        e,
+      );
+      return null;
+    }
   }
 
   /**
@@ -592,33 +794,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   private _sortTokens(srcAddress: Address, destAddress: Address) {
     return [srcAddress, destAddress].sort((a, b) => (a < b ? -1 : 1));
   }
-}
-
-/**
- * Converts an atomic amount (smallest token unit) to decimal representation.
- *
- * @param amount - The atomic amount as bigint
- * @param decimals - The number of decimal places for the token
- * @returns The decimal representation as BigNumber
- */
-function convertToDecimal(amount: bigint, decimals: number): BigNumber {
-  const decimalAdjustment = getBigNumberPow(decimals);
-  return new BigNumber(amount.toString()).dividedBy(decimalAdjustment);
-}
-
-/**
- * Converts a decimal amount to atomic representation (smallest token unit).
- *
- * @param amount - The decimal amount as BigNumber
- * @param decimals - The number of decimal places for the token
- * @returns The atomic amount as bigint
- */
-function convertFromDecimal(amount: BigNumber, decimals: number): bigint {
-  const decimalAdjustment = getBigNumberPow(decimals);
-  const atomicAmount = amount.multipliedBy(decimalAdjustment);
-  return BigInt(
-    atomicAmount.decimalPlaces(0, BigNumber.ROUND_FLOOR).toFixed(0),
-  );
 }
 
 const sleep = (time: number) =>

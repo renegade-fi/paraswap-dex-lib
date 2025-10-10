@@ -42,6 +42,13 @@ export type RenegadeData = {
   rawResponse?: SponsoredMatchResponse;
 };
 
+// Cache entry for storing signed quotes per token pair
+export type RenegadeQuoteCacheEntry = {
+  price: string; // Price in USDC per base token
+  timestamp: number;
+  signedQuote: SignedExternalQuote;
+};
+
 // Configuration parameters for Renegade DEX per network
 export type DexParams = {
   usdcAddress: string;
@@ -153,7 +160,7 @@ export type AtomicMatchApiBundle = {
   fees: FeeTake;
   receive: ApiExternalAssetTransfer;
   send: ApiExternalAssetTransfer;
-  settlement_tx: RenegadeTx;
+  settlement_tx: TransactionRequest;
 };
 
 /**
@@ -163,4 +170,70 @@ export type SponsoredMatchResponse = {
   match_bundle: AtomicMatchApiBundle;
   is_sponsored: boolean;
   gas_sponsorship_info?: GasSponsorshipInfo | null;
+};
+
+/**
+ * Request body for quote endpoint
+ */
+export type ExternalQuoteRequest = {
+  external_order: ExternalOrder;
+  matching_pool?: string;
+  relayer_fee_rate?: number;
+};
+
+/**
+ * Response from quote endpoint with signed quote and optional sponsorship
+ */
+export type SponsoredQuoteResponse = {
+  signed_quote: SignedExternalQuote;
+  gas_sponsorship_info?: SignedGasSponsorshipInfo | null;
+};
+
+/**
+ * EIP-1559 / EIP-4844 aware transaction request
+ */
+export type TransactionRequest = {
+  from?: string | null;
+  to?: string | null;
+  gasPrice?: string;
+  maxFeePerGas?: string;
+  maxPriorityFeePerGas?: string;
+  maxFeePerBlobGas?: string;
+  gas?: string;
+  value?: string;
+  input?: string;
+  data?: string;
+  nonce?: string;
+  chainId?: string;
+  accessList?: Array<{
+    address: string;
+    storageKeys: string[];
+  }>;
+  type?: string;
+  blobVersionedHashes?: string[];
+  sidecar?: Record<string, any>;
+  authorizationList?: Array<Record<string, any>>;
+};
+
+/**
+ * Request body for assemble external match endpoint
+ */
+export type AssembleExternalMatchRequest = {
+  signed_quote: SignedExternalQuote;
+  do_gas_estimation?: boolean;
+  allow_shared?: boolean;
+  matching_pool?: string;
+  relayer_fee_rate?: number;
+  receiver_address?: string | null;
+  updated_order?: ExternalOrder | null;
+};
+
+/**
+ * Optional query parameters for quote and assembly endpoints
+ */
+export type QuoteQueryParams = {
+  disable_gas_sponsorship?: boolean;
+  refund_address?: string;
+  refund_native_eth?: boolean;
+  use_gas_sponsorship?: boolean;
 };
