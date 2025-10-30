@@ -216,9 +216,10 @@ export class RenegadeClient {
         headers,
       );
 
-    this.logger.debug('Assembled external match from Renegade API', {
-      response,
-    });
+    this.logger.debug(
+      'Assembled external match from Renegade API',
+      JSON.stringify(response, null, 2),
+    );
 
     return response;
   }

@@ -47,7 +47,7 @@ import {
 
 export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
   readonly hasConstantPriceLargeAmounts = false;
-  readonly needWrapNative = false;
+  readonly needWrapNative = true;
   readonly isFeeOnTransferSupported = false;
   readonly isStatePollingDex = true;
 
@@ -289,7 +289,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     const baseMint = isDestUSDC ? srcToken.address : destToken.address;
     const quoteMint = RenegadeConfig['Renegade'][this.network].usdcAddress;
 
-    // Use existing methods to create the order, eliminating code duplication
     const renegadeSide = isRenegadeSell ? 'Sell' : 'Buy';
     const externalOrder =
       side === SwapSide.SELL
@@ -310,13 +309,7 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     const quoteResponse = await this.renegadeClient.requestQuote(externalOrder);
 
     // Cache the signed quote for later use in preProcessTransaction
-    const sortedAddresses = this._sortTokens(
-      srcToken.address,
-      destToken.address,
-    );
-    const cacheKey = `${RENEGADE_QUOTE_CACHE_KEY}_${sortedAddresses[0]}_${
-      sortedAddresses[1]
-    }_${isRenegadeSell ? 'Sell' : 'Buy'}`;
+    const cacheKey = this.getQuoteCacheKey(srcToken, destToken);
 
     // Extract send/receive from quote
     const send = quoteResponse.signed_quote.quote.send;
@@ -666,17 +659,8 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     destToken: Token,
   ): Promise<SignedExternalQuote | null> {
     try {
-      // Determine Renegade side based on which token is USDC
-      const isRenegadeSell = this.isRenegadeSell(srcToken, destToken);
-
-      // Build cache key from alphabetically sorted token addresses and side
-      const sortedAddresses = this._sortTokens(
-        srcToken.address,
-        destToken.address,
-      );
-      const cacheKey = `${RENEGADE_QUOTE_CACHE_KEY}_${sortedAddresses[0]}_${
-        sortedAddresses[1]
-      }_${isRenegadeSell ? 'Sell' : 'Buy'}`;
+      // Build cache key using helper method
+      const cacheKey = this.getQuoteCacheKey(srcToken, destToken);
 
       // Check cache for existing quote
       const cachedQuote = await this.dexHelper.cache.getAndCacheLocally(
@@ -767,6 +751,28 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     const usdcAddress = RenegadeConfig['Renegade'][this.network].usdcAddress;
     return tokenAddress.toLowerCase() === usdcAddress.toLowerCase();
   }
+  /**
+   * Generate cache key for quote storage and retrieval.
+   *
+   * @param srcToken - Source token for the swap
+   * @param destToken - Destination token for the swap
+   * @returns Cache key string for the quote
+   */
+  private getQuoteCacheKey(srcToken: Token, destToken: Token): string {
+    // Determine Renegade side based on which token is USDC
+    const isRenegadeSell = this.isRenegadeSell(srcToken, destToken);
+
+    // Build cache key from alphabetically sorted token addresses and side
+    const sortedAddresses = this._sortTokens(
+      srcToken.address,
+      destToken.address,
+    );
+
+    return `${RENEGADE_QUOTE_CACHE_KEY}_${sortedAddresses[0]}_${
+      sortedAddresses[1]
+    }_${isRenegadeSell ? 'Sell' : 'Buy'}`;
+  }
+
   /**
    * Sort token addresses alphabetically.
    *

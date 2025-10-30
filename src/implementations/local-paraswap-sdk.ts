@@ -131,15 +131,6 @@ export class LocalParaswapSDK implements IParaSwapSDK {
     const amounts = _.range(0, chunks + 1).map(
       i => (amount * BigInt(i)) / BigInt(chunks),
     );
-    // eslint-disable-next-line no-console
-    console.log('🚀 getPrices Inputs: ', {
-      from,
-      to,
-      amount,
-      side,
-      amounts,
-      contractMethod,
-    });
     const poolPrices = await this.pricingHelper.getPoolPrices(
       from,
       to,
@@ -150,9 +141,6 @@ export class LocalParaswapSDK implements IParaSwapSDK {
       poolIdentifiers,
       transferFees,
     );
-
-    // eslint-disable-next-line no-console
-    console.log('🚀 getPrices Outputs: ', poolPrices);
 
     if (!poolPrices || poolPrices.length == 0)
       throw new Error('Fail to get price for ' + this.dexKeys.join(', '));
@@ -340,17 +328,6 @@ export class LocalParaswapSDK implements IParaSwapSDK {
       priceRoute.version === ParaSwapVersion.V5
         ? this.transactionBuilderV5
         : this.transactionBuilder;
-
-    // eslint-disable-next-line no-console
-    console.log('🚀 Building Tx with : ', {
-      priceRoute,
-      minMaxAmount: minMaxAmount.toString(),
-      userAddress,
-      partnerAddress: NULL_ADDRESS,
-      partnerFeePercent: '0',
-      deadline: deadline.toString(),
-      uuid: uuid(),
-    });
 
     return await txBuilder.build({
       priceRoute,

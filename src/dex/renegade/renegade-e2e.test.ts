@@ -179,36 +179,28 @@ function testForNetwork(
 describe('Renegade E2E', () => {
   const dexKey = 'Renegade';
 
-  // describe('Arbitrum', () => {
-  //   const network = Network.ARBITRUM;
+  describe('Arbitrum', () => {
+    const network = Network.ARBITRUM;
 
-  //   // TODO: Modify the tokenASymbol, tokenBSymbol, tokenAAmount;
-  //   const quoteSymbol: string = 'USDC';
-  //   const baseSymbol: string = 'WETH';
+    // TODO: Modify the tokenASymbol, tokenBSymbol, tokenAAmount;
+    const quoteSymbol: string = 'USDC';
+    const baseSymbol: string = 'WETH';
 
-  //   const quoteAmount: string = '10000000'; // 10 USDC
-  //   const baseAmount: string = '10000000000000000'; // 0.01 WETH
+    const quoteAmount: string = '10000000'; // 10 USDC
+    const baseAmount: string = '10000000000000000'; // 0.01 WETH
 
-  //   // const tokenASymbol: string = 'WETH';
-  //   // const tokenBSymbol: string = 'USDC';
+    testForNetwork(
+      network,
+      dexKey,
+      quoteSymbol,
+      baseSymbol,
+      quoteAmount,
+      baseAmount,
+      baseAmount,
+    );
 
-  //   // const tokenAAmount: string = '100000000000000000'; // 0.1 WETH
-  //   // const tokenBAmount: string = '10000000'; // 10 USDC
-
-  //   const nativeTokenAmount = '10000000000000000'; // 0.01 ETH
-
-  //   testForNetwork(
-  //     network,
-  //     dexKey,
-  //     quoteSymbol,
-  //     baseSymbol,
-  //     quoteAmount,
-  //     baseAmount,
-  //     nativeTokenAmount,
-  //   );
-
-  //   // TODO: Add any additional test cases required to test Renegade
-  // });
+    // TODO: Add any additional test cases required to test Renegade
+  });
 
   describe('Base', () => {
     const network = Network.BASE;
@@ -218,15 +210,7 @@ describe('Renegade E2E', () => {
     const baseSymbol: string = 'WETH';
 
     const quoteAmount: string = '10000000'; // 10 USDC
-    const baseAmount: string = '10000000000000000'; // 0.01 WETH
-
-    // const tokenASymbol: string = 'WETH';
-    // const tokenBSymbol: string = 'USDC';
-
-    // const tokenAAmount: string = '100000000000000000'; // 0.1 WETH
-    // const tokenBAmount: string = '10000000'; // 10 USDC
-
-    const nativeTokenAmount = '10000000000000000'; // 0.01 ETH
+    const baseAmount: string = '100000000000000000'; // 0.01 WETH
 
     testForNetwork(
       network,
@@ -235,7 +219,7 @@ describe('Renegade E2E', () => {
       baseSymbol,
       quoteAmount,
       baseAmount,
-      nativeTokenAmount,
+      baseAmount,
     );
 
     // TODO: Add any additional test cases required to test Renegade

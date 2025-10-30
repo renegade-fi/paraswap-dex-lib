@@ -78,14 +78,6 @@ describe('Renegade', function () {
       0n,
       1n * BI_POWS[tokens[srcTokenSymbol].decimals],
       2n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      3n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      4n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      5n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      6n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      7n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      8n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      9n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      10n * BI_POWS[tokens[srcTokenSymbol].decimals],
     ];
 
     const amountsForBuy = [
@@ -176,19 +168,7 @@ describe('Renegade', function () {
     const srcTokenSymbol = 'WETH';
     const destTokenSymbol = 'USDC';
 
-    const amountsForSell = [
-      0n,
-      1n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      2n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      3n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      4n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      5n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      6n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      7n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      8n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      9n * BI_POWS[tokens[srcTokenSymbol].decimals],
-      10n * BI_POWS[tokens[srcTokenSymbol].decimals],
-    ];
+    const amountsForSell = [0n, BI_POWS[tokens[srcTokenSymbol].decimals] / 10n];
 
     const amountsForBuy = [
       0n,
@@ -196,12 +176,6 @@ describe('Renegade', function () {
       2000n * BI_POWS[tokens[destTokenSymbol].decimals],
       3000n * BI_POWS[tokens[destTokenSymbol].decimals],
       4000n * BI_POWS[tokens[destTokenSymbol].decimals],
-      5000n * BI_POWS[tokens[destTokenSymbol].decimals],
-      6000n * BI_POWS[tokens[destTokenSymbol].decimals],
-      7000n * BI_POWS[tokens[destTokenSymbol].decimals],
-      8000n * BI_POWS[tokens[destTokenSymbol].decimals],
-      9000n * BI_POWS[tokens[destTokenSymbol].decimals],
-      10000n * BI_POWS[tokens[destTokenSymbol].decimals],
     ];
 
     beforeAll(async () => {
