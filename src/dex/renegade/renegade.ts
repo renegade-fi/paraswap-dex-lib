@@ -427,14 +427,53 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     tokenAddress: Address,
     limit: number,
   ): Promise<PoolLiquidity[]> {
-    // Get current price levels from cache
+    // Ensure we have cached levels and token metadata available
     const levels = await this.getCachedLevels();
-    if (!levels) {
-      return [];
+    if (!levels) return [];
+    await this.setTokensMap();
+
+    const normalizedTokenAddress = tokenAddress.toLowerCase();
+    const normalizedUsdcAddress = this.usdcAddress.toLowerCase();
+
+    const directionalLiquidity = levels.getDirectionalLiquidityForToken(
+      normalizedTokenAddress,
+      normalizedUsdcAddress,
+    );
+
+    const results: PoolLiquidity[] = [];
+
+    for (const liquidityData of directionalLiquidity) {
+      const {
+        baseToken,
+        outboundLiquidityUSD,
+        reverseLiquidityUSD,
+        isTokenBase,
+      } = liquidityData;
+
+      // Determine connector token: USDC if token is base, base token if token is quote
+      const connectorAddress = isTokenBase ? normalizedUsdcAddress : baseToken;
+      const connectorMeta = this.tokensMap[connectorAddress];
+
+      if (!connectorMeta) {
+        continue;
+      }
+
+      results.push({
+        exchange: this.dexKey,
+        address: baseToken,
+        connectorTokens: [
+          {
+            address: connectorAddress,
+            decimals: connectorMeta.decimals,
+            symbol: connectorMeta.symbol,
+            liquidityUSD: reverseLiquidityUSD,
+          },
+        ],
+        liquidityUSD: outboundLiquidityUSD,
+      });
     }
 
-    const pools = levels.getPoolLiquidity(tokenAddress);
-    return pools
+    return results
       .sort((a, b) => b.liquidityUSD - a.liquidityUSD)
       .slice(0, limit);
   }

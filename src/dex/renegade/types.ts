@@ -3,7 +3,7 @@
 import { SponsoredMatchResponse } from './api/types';
 
 // Price level format from Renegade API
-type RenegadePriceLevel = [price: string, size: string];
+export type RenegadePriceLevel = [price: string, size: string];
 
 // Pair data structure from Renegade API
 export type RenegadeDepth = {

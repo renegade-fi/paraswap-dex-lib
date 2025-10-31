@@ -145,6 +145,7 @@ export class RateFetcher {
   // Handle successful levels response from the Fetcher.
   private handleLevelsResponse(levelsResponse: RenegadeLevelsResponse): void {
     const rawData = levelsResponse.getRawData();
+    this.logger.info(`Renegade levels response: ${JSON.stringify(rawData)}`);
 
     this.dexHelper.cache.setex(
       this.dexKey,

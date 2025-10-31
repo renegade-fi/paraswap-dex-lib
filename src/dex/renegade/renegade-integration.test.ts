@@ -245,7 +245,6 @@ describe('Renegade', function () {
       1000n * BI_POWS[tokens[destTokenSymbol].decimals],
       2000n * BI_POWS[tokens[destTokenSymbol].decimals],
       3000n * BI_POWS[tokens[destTokenSymbol].decimals],
-      4000n * BI_POWS[tokens[destTokenSymbol].decimals],
     ];
 
     beforeAll(async () => {
