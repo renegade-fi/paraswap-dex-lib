@@ -20,6 +20,7 @@ import {
   TransferFeeParams,
 } from '../../types';
 import { SimpleExchange } from '../simple-exchange';
+import { getBigIntPow } from '../../utils';
 import { RenegadeClient } from './api/renegade-client';
 import {
   ExternalOrder,
@@ -222,7 +223,7 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       return [
         {
           prices,
-          unit: BigInt(outputDecimals),
+          unit: getBigIntPow(outputDecimals),
           data: {},
           poolIdentifiers: [poolIdentifier],
           exchange: this.dexKey,
