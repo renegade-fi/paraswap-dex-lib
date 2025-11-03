@@ -259,13 +259,13 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     const renegadeSide = isRenegadeSell ? 'Sell' : 'Buy';
     const externalOrder =
       side === SwapSide.SELL
-        ? this.createUpdatedOrderForExactIn(
+        ? this.createExternalOrderWithInputAmount(
             quoteMint,
             baseMint,
             renegadeSide,
             referenceAmount,
           )
-        : this.createUpdatedOrderForExactOut(
+        : this.createExternalOrderWithExactOutputAmount(
             quoteMint,
             baseMint,
             renegadeSide,
@@ -521,9 +521,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
         );
       }
 
-      const srcAmount = optimalSwapExchange.srcAmount;
-      const destAmount = optimalSwapExchange.destAmount;
-
       // 1. Retrieve cached fixed signed quote for the pair (now side-specific)
       const cachedSignedQuote = await this.getCachedSignedQuote(
         srcToken,
@@ -536,29 +533,9 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
         );
       }
 
-      // 2. Create updated order with actual amounts (preserving side and token pair)
-      const baseOrder = cachedSignedQuote.quote.order;
-      const updatedOrder =
-        side === SwapSide.SELL
-          ? this.createUpdatedOrderForExactIn(
-              baseOrder.quote_mint,
-              baseOrder.base_mint,
-              baseOrder.side,
-              srcAmount,
-            )
-          : this.createUpdatedOrderForExactOut(
-              baseOrder.quote_mint,
-              baseOrder.base_mint,
-              baseOrder.side,
-              destAmount,
-            );
-
-      // 3. Request calldata from Renegade API
+      // 2. Request calldata from Renegade API
       const response = await this.renegadeClient.assembleExternalMatch(
         cachedSignedQuote,
-        {
-          updated_order: updatedOrder,
-        },
       );
 
       const settlementTxRequest = response?.match_bundle?.settlement_tx;
@@ -685,7 +662,7 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
 
   // Create updated order for exact input (ParaSwap SELL side).
   // Preserves token pair and side from cached quote, updates amounts only.
-  private createUpdatedOrderForExactIn(
+  private createExternalOrderWithInputAmount(
     quoteMint: string,
     baseMint: string,
     side: 'Sell' | 'Buy',
@@ -700,7 +677,6 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     // If Renegade Buy: quote is input (quote_amount)
     const baseAmount = isRenegadeSell ? srcAmount : '0';
     const quoteAmount = isRenegadeSell ? '0' : srcAmount;
-    const minFillSize = isRenegadeSell ? srcAmount : '0';
 
     return {
       quote_mint: quoteMint,
@@ -708,7 +684,7 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
       side: side,
       base_amount: baseAmount,
       quote_amount: quoteAmount,
-      min_fill_size: minFillSize,
+      min_fill_size: srcAmount,
       exact_base_output: '0',
       exact_quote_output: '0',
     };
@@ -716,7 +692,7 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
 
   // Create updated order for exact output (ParaSwap BUY side).
   // Preserves token pair and side from cached quote, updates amounts only.
-  private createUpdatedOrderForExactOut(
+  private createExternalOrderWithExactOutputAmount(
     quoteMint: string,
     baseMint: string,
     side: 'Sell' | 'Buy',

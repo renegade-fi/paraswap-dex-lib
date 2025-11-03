@@ -13,7 +13,7 @@ import { generateConfig } from '../../config';
 import { RENEGADE_NAME } from './constants';
 
 /** Pause test after `initializePricing` */
-const SLEEP_MS = 5000;
+const SLEEP_MS = 1000;
 
 /** Slippage in BPS */
 const SLIPPAGE = 1;
