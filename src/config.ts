@@ -570,12 +570,9 @@ export function generateConfig(network: number): Config {
     dexalotAuthToken: baseConfig.dexalotAuthToken,
     bebopAuthName: baseConfig.bebopAuthName,
     bebopAuthToken: baseConfig.bebopAuthToken,
-<<<<<<< HEAD
     nativeApiKey: baseConfig.nativeApiKey,
-=======
     renegadeAuthApiKey: baseConfig.renegadeAuthApiKey,
     renegadeAuthApiSecret: baseConfig.renegadeAuthApiSecret,
->>>>>>> 1a014b06c (Feat/renegade (#24))
     hashFlowDisabledMMs: baseConfig.hashFlowDisabledMMs,
     forceRpcFallbackDexs: baseConfig.forceRpcFallbackDexs,
     apiKeyTheGraph: process.env.API_KEY_THE_GRAPH || '',

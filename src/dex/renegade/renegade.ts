@@ -291,6 +291,11 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     const inputAmount = isSendInput ? send.amount : receive.amount;
     const outputAmount = isSendInput ? receive.amount : send.amount;
 
+    // Protect against division by zero
+    if (new BigNumber(inputAmount).isZero()) {
+      throw new Error('Division by zero: inputAmount is zero');
+    }
+
     // Calculate rate: output per input (in atomic units)
     const rate = new BigNumber(outputAmount).dividedBy(inputAmount);
 
@@ -533,9 +538,32 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
         );
       }
 
-      // 2. Request calldata from Renegade API
+      // 2. Extract base_mint, quote_mint, and side from cached quote
+      const cachedOrder = cachedSignedQuote.quote.order;
+      const baseMint = cachedOrder.base_mint;
+      const quoteMint = cachedOrder.quote_mint;
+      const renegadeSide = cachedOrder.side;
+
+      // 3. Create updated order with actual transaction amount
+      const updatedOrder =
+        side === SwapSide.SELL
+          ? this.createExternalOrderWithInputAmount(
+              quoteMint,
+              baseMint,
+              renegadeSide,
+              optimalSwapExchange.srcAmount,
+            )
+          : this.createExternalOrderWithExactOutputAmount(
+              quoteMint,
+              baseMint,
+              renegadeSide,
+              optimalSwapExchange.destAmount,
+            );
+
+      // 4. Request calldata from Renegade API with updated order
       const response = await this.renegadeClient.assembleExternalMatch(
         cachedSignedQuote,
+        { updated_order: updatedOrder },
       );
 
       const settlementTxRequest = response?.match_bundle?.settlement_tx;
@@ -721,17 +749,27 @@ export class Renegade extends SimpleExchange implements IDex<RenegadeData> {
     };
   }
 
-  // Check if both tokens are supported by Renegade API (exist in tokensMap).
+  // Ensures both tokens are supported by Renegade API and exactly one of them is USDC.
   private areTokensSupported(
     srcTokenAddress: Address,
     destTokenAddress: Address,
   ): boolean {
     const srcTokenLower = srcTokenAddress.toLowerCase();
     const destTokenLower = destTokenAddress.toLowerCase();
-    return (
-      this.tokensMap[srcTokenLower] !== undefined &&
-      this.tokensMap[destTokenLower] !== undefined
-    );
+
+    const srcTokenExists = this.tokensMap[srcTokenLower] !== undefined;
+    const destTokenExists = this.tokensMap[destTokenLower] !== undefined;
+
+    if (!srcTokenExists || !destTokenExists) {
+      return false;
+    }
+
+    const srcIsUSDC = this.isUSDC(srcTokenAddress);
+    const destIsUSDC = this.isUSDC(destTokenAddress);
+
+    const exactlyOneIsUSDC = srcIsUSDC !== destIsUSDC;
+
+    return exactlyOneIsUSDC;
   }
 
   // Determine if this is a Renegade Sell operation (base → USDC).
