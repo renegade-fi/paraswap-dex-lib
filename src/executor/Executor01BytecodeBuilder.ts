@@ -392,15 +392,27 @@ export class Executor01BytecodeBuilder extends ExecutorBytecodeBuilder<
           [swap.swapExchanges[swapExchangeIndex].srcAmount],
         );
 
-        const fromAmountIndex = exchangeData
-          .replace('0x', '')
-          .indexOf(fromAmount.replace('0x', ''));
+        const cleanedCalldata = exchangeData.replace('0x', '');
+        const cleanedAmount = fromAmount.replace('0x', '');
+
+        const matches: number[] = [];
+        for (
+          let idx = cleanedCalldata.indexOf(cleanedAmount);
+          idx !== -1;
+          idx = cleanedCalldata.indexOf(cleanedAmount, idx + 1)
+        ) {
+          matches.push(idx);
+        }
+
+        const fromAmountIndex =
+          matches.find(idx => idx % 2 === 0) ??
+          (matches.length > 0 ? matches[0] : -1);
 
         fromAmountPos =
-          (fromAmountIndex !== -1 ? fromAmountIndex : exchangeData.length) / 2;
+          (fromAmountIndex !== -1 ? fromAmountIndex : cleanedCalldata.length) /
+          2;
       }
     }
-
     return this.buildCallData(
       exchangeParam.targetExchange,
       exchangeData,
