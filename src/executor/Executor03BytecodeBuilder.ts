@@ -359,9 +359,20 @@ export class Executor03BytecodeBuilder extends ExecutorBytecodeBuilder<
           [swap.swapExchanges[swapExchangeIndex].srcAmount],
         );
 
-        const fromAmountIndex = exchangeData
-          .replace('0x', '')
-          .indexOf(fromAmount.replace('0x', ''));
+        const rawCalldata = exchangeData.replace('0x', '');
+        const rawAmount = fromAmount.replace('0x', '');
+
+        let fromAmountIndex = -1;
+        for (
+          let idx = rawCalldata.indexOf(rawAmount);
+          idx !== -1;
+          idx = rawCalldata.indexOf(rawAmount, idx + 1)
+        ) {
+          if (idx % 2 === 0) {
+            fromAmountIndex = idx;
+            break;
+          }
+        }
 
         fromAmountPos =
           (fromAmountIndex !== -1 ? fromAmountIndex : exchangeData.length) / 2;
@@ -372,9 +383,20 @@ export class Executor03BytecodeBuilder extends ExecutorBytecodeBuilder<
         [swap.swapExchanges[swapExchangeIndex].destAmount],
       );
 
-      const toAmountIndex = exchangeData
-        .replace('0x', '')
-        .lastIndexOf(toAmount.replace('0x', ''));
+      const rawCalldata = exchangeData.replace('0x', '');
+      const rawAmount = toAmount.replace('0x', '');
+
+      let toAmountIndex = -1;
+      for (
+        let idx = rawCalldata.indexOf(rawAmount);
+        idx !== -1;
+        idx = rawCalldata.indexOf(rawAmount, idx + 1)
+      ) {
+        if (idx % 2 === 0) {
+          toAmountIndex = idx;
+          break;
+        }
+      }
 
       toAmountPos =
         (toAmountIndex !== -1 ? toAmountIndex : exchangeData.length) / 2;
