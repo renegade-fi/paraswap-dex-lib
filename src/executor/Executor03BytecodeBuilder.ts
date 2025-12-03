@@ -359,23 +359,7 @@ export class Executor03BytecodeBuilder extends ExecutorBytecodeBuilder<
           [swap.swapExchanges[swapExchangeIndex].srcAmount],
         );
 
-        const rawCalldata = exchangeData.replace('0x', '');
-        const rawAmount = fromAmount.replace('0x', '');
-
-        let fromAmountIndex = -1;
-        for (
-          let idx = rawCalldata.indexOf(rawAmount);
-          idx !== -1;
-          idx = rawCalldata.indexOf(rawAmount, idx + 1)
-        ) {
-          if (idx % 2 === 0) {
-            fromAmountIndex = idx;
-            break;
-          }
-        }
-
-        fromAmountPos =
-          (fromAmountIndex !== -1 ? fromAmountIndex : exchangeData.length) / 2;
+        fromAmountPos = this.findAmountPosInCalldata(exchangeData, fromAmount);
       }
 
       const toAmount = ethers.utils.defaultAbiCoder.encode(
@@ -383,23 +367,7 @@ export class Executor03BytecodeBuilder extends ExecutorBytecodeBuilder<
         [swap.swapExchanges[swapExchangeIndex].destAmount],
       );
 
-      const rawCalldata = exchangeData.replace('0x', '');
-      const rawAmount = toAmount.replace('0x', '');
-
-      let toAmountIndex = -1;
-      for (
-        let idx = rawCalldata.indexOf(rawAmount);
-        idx !== -1;
-        idx = rawCalldata.indexOf(rawAmount, idx + 1)
-      ) {
-        if (idx % 2 === 0) {
-          toAmountIndex = idx;
-          break;
-        }
-      }
-
-      toAmountPos =
-        (toAmountIndex !== -1 ? toAmountIndex : exchangeData.length) / 2;
+      toAmountPos = this.findAmountPosInCalldata(exchangeData, toAmount);
     }
 
     return this.buildCallData(
