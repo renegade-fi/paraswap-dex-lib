@@ -419,6 +419,7 @@ export class UniswapV3
       this.cacheStateKey,
       this.config.initHash,
       tickSpacing,
+      this.config.deployer,
     );
   }
 
