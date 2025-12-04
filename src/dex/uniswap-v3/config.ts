@@ -14,6 +14,7 @@ import { VelodromeSlipstreamFactory } from './forks/velodrome-slipstream/velodro
 import { PangolinV3EventPool } from './forks/pangolin-v3/pangolin-v3-pool';
 import { PharaohV3EventPool } from './forks/pharaoh-v3/pharaoh-v3-pool';
 import PharaohV3MulticallABI from '../../abi/pharaoh-v3/PharaohV3StateMulticall.abi.json';
+import { PharaohV3Factory } from './forks/pharaoh-v3/pharaoh-v3-factory';
 
 const SUPPORTED_FEES = [10000n, 3000n, 500n, 100n];
 const RAMSES_FORKS_FEES = [...SUPPORTED_FEES, 50n, 250n];
@@ -468,7 +469,7 @@ export const UniswapV3Config: DexConfigMap<DexParams> = {
       stateMulticall: '0x08C32d5f0cA3355c041de74aB67467cB52A0ED4c',
       stateMultiCallAbi: PharaohV3MulticallABI as AbiItem[],
       eventPoolImplementation: PharaohV3EventPool,
-      factoryImplementation: VelodromeSlipstreamFactory,
+      factoryImplementation: PharaohV3Factory,
       decodeStateMultiCallResultWithRelativeBitmaps:
         decodeStateMultiCallResultWithRelativeBitmapsForPharaohV3,
       uniswapMulticall: '0xf296bb0EAeAB6703d876b1BFe9d5693eF302B855',
