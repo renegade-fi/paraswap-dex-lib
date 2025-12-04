@@ -39,7 +39,7 @@ export class PharaohV3EventPool extends VelodromeSlipstreamEventPool {
       }
     } catch (error) {
       this.logger.error(
-        `VelodromeSlipstream: Failed to fetch fee for pool ${this.poolAddress}:`,
+        `PharaohV3: Failed to fetch fee for pool ${this.poolAddress}:`,
         error,
       );
     }
