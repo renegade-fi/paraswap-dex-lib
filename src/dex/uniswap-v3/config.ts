@@ -7,14 +7,18 @@ import VelodromeSlipstreamMulticallABi from '../../abi/velodrome-slipstream/Velo
 import { AbiItem } from 'web3-utils';
 import { decodeStateMultiCallResultWithRelativeBitmaps as decodeStateMultiCallResultWithRelativeBitmapsForRamses } from './forks/ramses-v2/utils';
 import { decodeStateMultiCallResultWithRelativeBitmaps as decodeStateMultiCallResultWithRelativeBitmapsForVelodromeSlipstream } from './forks/velodrome-slipstream/utils';
+import { decodeStateMultiCallResultWithRelativeBitmaps as decodeStateMultiCallResultWithRelativeBitmapsForPharaohV3 } from './forks/pharaoh-v3/utils';
 import { RamsesV2EventPool } from './forks/ramses-v2/ramses-v2-pool';
 import { VelodromeSlipstreamEventPool } from './forks/velodrome-slipstream/velodrome-slipstream-pool';
 import { VelodromeSlipstreamFactory } from './forks/velodrome-slipstream/velodrome-slipstream-factory';
 import { PangolinV3EventPool } from './forks/pangolin-v3/pangolin-v3-pool';
+import { PharaohV3EventPool } from './forks/pharaoh-v3/pharaoh-v3-pool';
+import PharaohV3MulticallABI from '../../abi/pharaoh-v3/PharaohV3StateMulticall.abi.json';
 
 const SUPPORTED_FEES = [10000n, 3000n, 500n, 100n];
 const RAMSES_FORKS_FEES = [...SUPPORTED_FEES, 50n, 250n];
 const PANGOLIN_SUPPORTED_FEES = [8000n, 2500n, 500n, 100n];
+const PHARAOH_V3_SUPPORTED_FEES = [20000n, 10000n, 3000n, 500n, 250n, 100n];
 
 // Pools that will be initialized on app startup
 // They are added for testing
@@ -443,6 +447,37 @@ export const UniswapV3Config: DexConfigMap<DexParams> = {
       initHash: '0x321f7dfb9b2ea9131b8c17691cf6e01e5c149ca8', // pool implementation address from factory contract is used instead of initHash here
       subgraphURL: '3xqRjKD8dQhWnennAswpff5AFcYYXudFA4UWch4AB2Hb',
       liquidityField: 'liquidity',
+    },
+  },
+  PharaohV3: {
+    [Network.AVALANCHE]: {
+      factory: '0xAE6E5c62328ade73ceefD42228528b70c8157D0d',
+      deployer: '0x6a4113ed0915bCf5E48e758e8f4cEBFFC07C66f9',
+      quoter: '0xAdAe75447D112cfC401C952744de3E6d32456465',
+      router: '0xc8B8fCbDb5C019D7802fFb0b39603395D7d3915c',
+      supportedFees: PHARAOH_V3_SUPPORTED_FEES,
+      tickSpacings: [1n, 5n, 10n, 50n, 100n, 200n],
+      tickSpacingsToFees: {
+        '1': 100n,
+        '5': 250n,
+        '10': 500n,
+        '50': 3000n,
+        '100': 10000n,
+        '200': 20000n,
+      },
+      stateMulticall: '0x08C32d5f0cA3355c041de74aB67467cB52A0ED4c',
+      stateMultiCallAbi: PharaohV3MulticallABI as AbiItem[],
+      eventPoolImplementation: PharaohV3EventPool,
+      factoryImplementation: VelodromeSlipstreamFactory,
+      decodeStateMultiCallResultWithRelativeBitmaps:
+        decodeStateMultiCallResultWithRelativeBitmapsForPharaohV3,
+      uniswapMulticall: '0xf296bb0EAeAB6703d876b1BFe9d5693eF302B855',
+      chunksCount: 10,
+      initRetryFrequency: 10,
+      initHash:
+        '0xf0909675090b07c9cd0ac7eeb585c1c3133319afff4f3c82b6db8de548e77165',
+      subgraphURL:
+        'https://avalanchev2.kingdomsubgraph.com/subgraphs/name/pharaoh-v3-pruned',
     },
   },
   AerodromeSlipstream: {
