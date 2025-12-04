@@ -38,6 +38,7 @@ import {
   TokenDataMap,
 } from './types';
 import {
+  BlacklistError,
   SlippageCheckError,
   TooStrictSlippageCheckError,
 } from '../generic-rfq/types';
@@ -58,7 +59,6 @@ import {
   DEXALOT_API_BLACKLIST_POLLING_INTERVAL_MS,
   DEXALOT_RATE_LIMITED_TTL_S,
   DEXALOT_MIN_SLIPPAGE_FACTOR_THRESHOLD_FOR_RESTRICTION,
-  DEXALOT_RESTRICTED_CACHE_KEY,
   DEXALOT_RESTRICT_TTL_S,
   DEXALOT_FIRM_QUOTE_TIMEOUT_MS,
 } from './constants';
@@ -100,7 +100,10 @@ export class Dexalot
       .dexalotRouterAddress,
     protected rfqInterface = new Interface(mainnetRFQAbi),
   ) {
-    super(dexHelper, dexKey);
+    super(dexHelper, dexKey, {
+      enablePairRestriction: true,
+      restrictPairTtlS: DEXALOT_RESTRICT_TTL_S,
+    });
     this.logger = dexHelper.getLogger(`${dexKey}-${network}`);
 
     const authToken = dexHelper.config.data.dexalotAuthToken;
@@ -460,9 +463,6 @@ export class Dexalot
           )
         : await this.getPoolIdentifiers(srcToken, destToken, side, blockNumber);
 
-      pools = await Promise.all(
-        pools.map(async p => !(await this.isRestrictedPool(p))),
-      ).then(res => pools.filter((_v, i) => res[i]));
       if (pools.length === 0) {
         return null;
       }
@@ -567,11 +567,7 @@ export class Dexalot
       this.logger.warn(
         `${this.dexKey}-${this.network}: blacklisted TX Origin address '${options.txOrigin}' trying to build a transaction. Bailing...`,
       );
-      throw new Error(
-        `${this.dexKey}-${
-          this.network
-        }: user=${options.txOrigin.toLowerCase()} is blacklisted`,
-      );
+      throw new BlacklistError(this.dexKey, this.network, options.txOrigin);
     }
 
     if (BigInt(optimalSwapExchange.srcAmount) === 0n) {
@@ -728,10 +724,20 @@ export class Dexalot
             options.userAddress,
             errorData.RetryAfter ?? DEXALOT_RATE_LIMITED_TTL_S,
           );
+          throw new BlacklistError(
+            this.dexKey,
+            this.network,
+            options.userAddress,
+          );
         } else {
           await this.addBlacklistedAddress(options.userAddress);
           this.logger.error(
             `${this.dexKey}-${this.network}: Failed to fetch RFQ for ${swapIdentifier}: ${errorData.Reason}`,
+          );
+          throw new BlacklistError(
+            this.dexKey,
+            this.network,
+            options.userAddress,
           );
         }
       } else {
@@ -740,18 +746,10 @@ export class Dexalot
             `${this.dexKey}-${this.network}: failed to build transaction on side ${side} with too strict slippage. Skipping restriction`,
           );
         } else {
-          const poolIdentifiers = await this.getPoolIdentifiers(
-            srcToken,
-            destToken,
-            side,
-            0,
-          );
           this.logger.warn(
-            `${this.dexKey}-${this.network}: protocol is restricted for pools ${poolIdentifiers} due to swap: ${swapIdentifier}`,
+            `${this.dexKey}-${this.network}: protocol is restricted for pair ${srcToken.address} -> ${destToken.address} due to swap: ${swapIdentifier}`,
           );
-          await Promise.all(
-            poolIdentifiers.map(async p => await this.restrictPool(p)),
-          );
+          await this.restrictPair(srcToken.address, destToken.address);
         }
       }
 
@@ -834,34 +832,6 @@ export class Dexalot
       payload,
       networkFee: '0',
     };
-  }
-
-  getRestrictedPoolKey(poolIdentifier: string): string {
-    return `${DEXALOT_RESTRICTED_CACHE_KEY}-${poolIdentifier}`;
-  }
-
-  async restrictPool(
-    poolIdentifier: string,
-    ttl: number = DEXALOT_RESTRICT_TTL_S,
-  ): Promise<boolean> {
-    await this.dexHelper.cache.setex(
-      this.dexKey,
-      this.network,
-      this.getRestrictedPoolKey(poolIdentifier),
-      ttl,
-      'true',
-    );
-    return true;
-  }
-
-  async isRestrictedPool(poolIdentifier: string): Promise<boolean> {
-    const result = await this.dexHelper.cache.get(
-      this.dexKey,
-      this.network,
-      this.getRestrictedPoolKey(poolIdentifier),
-    );
-
-    return result === 'true';
   }
 
   async getSimpleParam(
