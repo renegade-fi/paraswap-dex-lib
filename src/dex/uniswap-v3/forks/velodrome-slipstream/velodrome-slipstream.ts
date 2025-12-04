@@ -56,7 +56,6 @@ export class VelodromeSlipstream extends UniswapV3 {
       _.pick(UniswapV3Config, [
         'VelodromeSlipstream',
         'VelodromeSlipstreamNewFactory',
-        'PharaohV3',
         'AerodromeSlipstream',
       ]),
     );
