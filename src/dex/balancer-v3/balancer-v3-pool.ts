@@ -189,6 +189,7 @@ export class BalancerV3EventPool extends StatefulEventSubscriber<PoolStateMap> {
       this.dexHelper,
       this.interfaces,
       blockNumber,
+      this.logger,
     );
 
     // Filter out all paused pools
@@ -220,6 +221,7 @@ export class BalancerV3EventPool extends StatefulEventSubscriber<PoolStateMap> {
       this.dexHelper,
       this.interfaces,
       blockNumber,
+      this.logger,
     );
 
     return latestOnChainPools;

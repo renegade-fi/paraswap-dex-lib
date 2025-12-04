@@ -78,6 +78,7 @@ import { Wombat } from './wombat/wombat';
 import { Swell } from './swell/swell';
 import { PharaohV1 } from './solidly/forks-override/pharaohV1';
 import { EtherFi } from './etherfi';
+import { Native } from './native/native';
 import { Spark } from './spark/spark';
 import { SparkPsm } from './spark/spark-psm';
 import { VelodromeSlipstream } from './uniswap-v3/forks/velodrome-slipstream/velodrome-slipstream';
@@ -116,6 +117,7 @@ import { UsdcTransmuter } from './usdc-transmuter/usdc-transmuter';
 import { Blackhole } from './solidly/forks-override/blackhole';
 import { BlackholeCL } from './algebra-integral/forks/blackhole-cl';
 import { BunniV2 } from './bunni-v2/bunni-v2';
+import { Cap } from './cap/cap';
 
 const LegacyDexes = [
   CurveV2,
@@ -183,6 +185,7 @@ const Dexes = [
   WstETH,
   ERC4626,
   Hashflow,
+  Native,
   Infusion,
   MaverickV1,
   MaverickV2,
@@ -225,6 +228,7 @@ const Dexes = [
   Blackhole,
   BlackholeCL,
   BunniV2,
+  Cap,
 ];
 
 export type LegacyDexConstructor = new (dexHelper: IDexHelper) => IDexTxBuilder<
