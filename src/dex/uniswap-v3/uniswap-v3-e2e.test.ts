@@ -1306,6 +1306,52 @@ describe('UniswapV3 E2E', () => {
     });
   });
 
+  describe('PharaohV3', () => {
+    const dexKey = 'PharaohV3';
+
+    describe('Avalanche', () => {
+      const network = Network.AVALANCHE;
+
+      describe('WAVAX -> USDC', () => {
+        const tokenASymbol: string = 'WAVAX';
+        const tokenBSymbol: string = 'USDC';
+
+        const tokenAAmount: string = '1000000000000000000';
+        const tokenBAmount: string = '1000000';
+        const nativeTokenAmount = '1000000000000000000';
+
+        testForNetwork(
+          network,
+          dexKey,
+          tokenASymbol,
+          tokenBSymbol,
+          tokenAAmount,
+          tokenBAmount,
+          nativeTokenAmount,
+        );
+      });
+
+      describe('USDC -> USDT', () => {
+        const tokenASymbol: string = 'USDC';
+        const tokenBSymbol: string = 'USDT';
+
+        const tokenAAmount: string = '1000000';
+        const tokenBAmount: string = '1000000';
+        const nativeTokenAmount = '1000000000000000000';
+
+        testForNetwork(
+          network,
+          dexKey,
+          tokenASymbol,
+          tokenBSymbol,
+          tokenAAmount,
+          tokenBAmount,
+          nativeTokenAmount,
+        );
+      });
+    });
+  });
+
   describe('OkuTradeV3 E2E', () => {
     const dexKey = 'OkuTradeV3';
     describe('Gnosis', () => {
