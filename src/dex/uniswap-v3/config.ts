@@ -483,17 +483,18 @@ export const UniswapV3Config: DexConfigMap<DexParams> = {
   },
   AerodromeSlipstream: {
     [Network.BASE]: {
-      factory: '0x5e7BB104d84c7CB9B682AaC2F3d509f5F406809A',
+      factory: '0xaDe65c38CD4849aDBA595a4323a8C7DdfE89716a',
       quoter: '0x254cF9E1E6e233aa1AC962CB9B05b2cfeAaE15b0',
-      router: '0x1b2b6cE813b99b840Fe632c63bcA5394938Ef01e',
+      router: '0xcbBb8035cAc7D4B3Ca7aBb74cF7BdF900215Ce0D',
       supportedFees: SUPPORTED_FEES,
-      tickSpacings: [1n, 10n, 50n, 100n, 200n, 2000n],
+      tickSpacings: [1n, 10n, 50n, 100n, 200n, 500n, 2000n],
       tickSpacingsToFees: {
         '1': 100n,
         '10': 500n,
         '50': 500n,
         '100': 500n,
         '200': 3000n,
+        '500': 10000n,
         '2000': 10000n,
       },
       stateMulticall: '0x736518161516c1cfBD5bf5e7049FCBDC9b933987',
@@ -505,7 +506,7 @@ export const UniswapV3Config: DexConfigMap<DexParams> = {
       uniswapMulticall: '0x091e99cb1C49331a94dD62755D168E941AbD0693',
       chunksCount: 10,
       initRetryFrequency: 10,
-      initHash: '0xeC8E5342B19977B4eF8892e02D8DAEcfa1315831', // pool implementation address from factory contract is used instead of initHash here
+      initHash: '0x942e97a4c6FdC38B4CD1c0298D37d81fDD8E5A16', // pool implementation address from factory contract is used instead of initHash here
       subgraphURL: 'GENunSHWLBXm59mBSgPzQ8metBEp9YDfdqwFr91Av1UM',
     },
   },
