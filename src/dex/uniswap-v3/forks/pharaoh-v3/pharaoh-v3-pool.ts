@@ -16,6 +16,9 @@ import { _reduceTickBitmap, _reduceTicks } from '../../contract-math/utils';
 import { TickBitMap } from '../../contract-math/TickBitMap';
 import { bigIntify } from '../../../../utils';
 
+const PHARAOH_V3_POOL_INIT_CODE_HASH =
+  '0x892f127ed4b26ca352056c8fb54585a3268f76f97fdd84d5836ef4bda8d8c685';
+
 export class PharaohV3EventPool extends VelodromeSlipstreamEventPool {
   public readonly poolIface = new Interface(PharaohV3PoolABI);
   public readonly factoryIface = new Interface(PharaohV3FactoryABI);
@@ -185,15 +188,10 @@ export class PharaohV3EventPool extends VelodromeSlipstreamEventPool {
     implementation: string,
     salt: string,
   ) {
-    const creationCode = [
-      '0x638a3f6b0460e01b60005260006000600460006000335af16000600060006000',
-      '60003d600060003e6000515af43d600060003e3d6000f3',
-    ].join('');
-
     const address = ethers.utils.getCreate2Address(
       this.deployer ?? '',
       salt,
-      ethers.utils.keccak256(creationCode),
+      PHARAOH_V3_POOL_INIT_CODE_HASH,
     ) as Address;
 
     return address;
