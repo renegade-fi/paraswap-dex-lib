@@ -454,7 +454,7 @@ export const UniswapV3Config: DexConfigMap<DexParams> = {
     [Network.AVALANCHE]: {
       factory: '0xAE6E5c62328ade73ceefD42228528b70c8157D0d',
       deployer: '0x6a4113ed0915bCf5E48e758e8f4cEBFFC07C66f9',
-      quoter: '0xAdAe75447D112cfC401C952744de3E6d32456465',
+      quoter: '0xB7297301b7CC659BB96D51754643A0Df6eEA2138',
       router: '0xc8B8fCbDb5C019D7802fFb0b39603395D7d3915c',
       supportedFees: PHARAOH_V3_SUPPORTED_FEES,
       tickSpacings: [1n, 5n, 10n, 50n, 100n, 200n],

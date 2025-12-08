@@ -963,7 +963,7 @@ describe('RamsesV2', () => {
     console.log(`${TokenASymbol} <> ${TokenBSymbol} Pool Prices: `, poolPrices);
 
     expect(poolPrices).not.toBeNull();
-    checkPoolPrices(poolPrices!, amounts, SwapSide.SELL, dexKey);
+    checkPoolPrices(poolPrices!, amounts, SwapSide.BUY, dexKey);
 
     let falseChecksCounter = 0;
     await Promise.all(
@@ -1201,7 +1201,7 @@ describe('PharaohV3', () => {
 
   const network = Network.AVALANCHE;
   const dexHelper = new DummyDexHelper(network);
-  const TokenASymbol = 'WAVAX';
+  const TokenASymbol = 'USDT';
   const TokenA = Tokens[network][TokenASymbol];
 
   const TokenBSymbol = 'USDC';
@@ -1215,13 +1215,16 @@ describe('PharaohV3', () => {
   it('getPoolIdentifiers and getPricesVolume SELL', async function () {
     const amounts = [
       0n,
-      6000000n,
-      12000000n,
-      18000000n,
-      24000000n,
-      30000000n,
-      36000000n,
-      42000000n,
+      1n * BigInt(10 ** TokenA.decimals),
+      2n * BigInt(10 ** TokenA.decimals),
+      3n * BigInt(10 ** TokenA.decimals),
+      4n * BigInt(10 ** TokenA.decimals),
+      5n * BigInt(10 ** TokenA.decimals),
+      6n * BigInt(10 ** TokenA.decimals),
+      7n * BigInt(10 ** TokenA.decimals),
+      8n * BigInt(10 ** TokenA.decimals),
+      9n * BigInt(10 ** TokenA.decimals),
+      10n * BigInt(10 ** TokenA.decimals),
     ];
 
     const pools = await uniswapV3.getPoolIdentifiers(
@@ -1250,18 +1253,20 @@ describe('PharaohV3', () => {
     let falseChecksCounter = 0;
     await Promise.all(
       poolPrices!.map(async price => {
-        const fee = uniswapV3.eventPools[price.poolIdentifiers![0]]!.feeCode;
+        const tickSpacing =
+          uniswapV3.eventPools[price.poolIdentifiers![0]]!.tickSpacing!;
         const res = await checkOnChainPricing(
           dexHelper,
           uniswapV3,
           'quoteExactInputSingle',
           blockNumber,
-          '0xAdAe75447D112cfC401C952744de3E6d32456465',
+          '0xB7297301b7CC659BB96D51754643A0Df6eEA2138',
           price.prices,
           TokenA.address,
           TokenB.address,
-          fee,
+          tickSpacing,
           amounts,
+          velodromeQuoterIface,
         );
         if (res === false) falseChecksCounter++;
       }),
@@ -1273,13 +1278,16 @@ describe('PharaohV3', () => {
   it('getPoolIdentifiers and getPricesVolume BUY', async function () {
     const amounts = [
       0n,
-      6000000n,
-      12000000n,
-      18000000n,
-      24000000n,
-      30000000n,
-      36000000n,
-      42000000n,
+      1n * BigInt(10 ** TokenB.decimals),
+      2n * BigInt(10 ** TokenB.decimals),
+      3n * BigInt(10 ** TokenB.decimals),
+      4n * BigInt(10 ** TokenB.decimals),
+      5n * BigInt(10 ** TokenB.decimals),
+      6n * BigInt(10 ** TokenB.decimals),
+      7n * BigInt(10 ** TokenB.decimals),
+      8n * BigInt(10 ** TokenB.decimals),
+      9n * BigInt(10 ** TokenB.decimals),
+      10n * BigInt(10 ** TokenB.decimals),
     ];
 
     const pools = await uniswapV3.getPoolIdentifiers(
@@ -1303,23 +1311,25 @@ describe('PharaohV3', () => {
     console.log(`${TokenASymbol} <> ${TokenBSymbol} Pool Prices: `, poolPrices);
 
     expect(poolPrices).not.toBeNull();
-    checkPoolPrices(poolPrices!, amounts, SwapSide.SELL, dexKey);
+    checkPoolPrices(poolPrices!, amounts, SwapSide.BUY, dexKey);
 
     let falseChecksCounter = 0;
     await Promise.all(
       poolPrices!.map(async price => {
-        const fee = uniswapV3.eventPools[price.poolIdentifiers![0]]!.feeCode;
+        const tickSpacing =
+          uniswapV3.eventPools[price.poolIdentifiers![0]]!.tickSpacing!;
         const res = await checkOnChainPricing(
           dexHelper,
           uniswapV3,
           'quoteExactOutputSingle',
           blockNumber,
-          '0xAdAe75447D112cfC401C952744de3E6d32456465',
+          '0xB7297301b7CC659BB96D51754643A0Df6eEA2138',
           price.prices,
           TokenA.address,
           TokenB.address,
-          fee,
+          tickSpacing,
           amounts,
+          velodromeQuoterIface,
         );
         if (res === false) falseChecksCounter++;
       }),
