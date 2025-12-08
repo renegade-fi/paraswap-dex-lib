@@ -1,5 +1,5 @@
-import { Network, SwapSide } from '../../../../constants';
-import { Adapters, UniswapV3Config } from '../../config';
+import { Network } from '../../../../constants';
+import { UniswapV3Config } from '../../config';
 import { getDexKeysWithNetwork } from '../../../../utils';
 import _ from 'lodash';
 import { VelodromeSlipstream } from '../velodrome-slipstream/velodrome-slipstream';
@@ -40,8 +40,9 @@ export class PharaohV3 extends VelodromeSlipstream {
         pools0: clPools(
           orderBy: totalValueLockedToken0
           orderDirection: desc
-          first: 100
+          first: $count
           skip: 0
+          where: { token0: $token }
         ) {
           id
           token0 {
@@ -52,17 +53,14 @@ export class PharaohV3 extends VelodromeSlipstream {
             id
             decimals
           }
-          totalValueLockedToken0
-          totalValueLockedToken1
-          token0Price
-          token1Price
         }
           
         pools1: clPools(
           orderBy: totalValueLockedToken1
           orderDirection: desc
-          first: 100
+          first: $count
           skip: 0
+          where: { token1: $token }
         ) {
           id
           token0 {
@@ -73,10 +71,6 @@ export class PharaohV3 extends VelodromeSlipstream {
             id
             decimals
           }
-          totalValueLockedToken0
-          totalValueLockedToken1
-          token0Price
-          token1Price
         }
       }`,
       {
@@ -145,22 +139,22 @@ export class PharaohV3 extends VelodromeSlipstream {
       const tokenUsdBalance = poolUsdBalances[i * 2];
       const connectorTokenUsdBalance = poolUsdBalances[i * 2 + 1];
 
-      const effToken = tokenUsdBalance
+      const tokenUsdLiquidity = tokenUsdBalance
         ? tokenUsdBalance * UNISWAPV3_EFFICIENCY_FACTOR
         : null;
 
-      const effConnector = connectorTokenUsdBalance
+      const connectorTokenUsdLiquidity = connectorTokenUsdBalance
         ? connectorTokenUsdBalance * UNISWAPV3_EFFICIENCY_FACTOR
         : null;
 
-      if (effToken) {
+      if (tokenUsdLiquidity) {
         pool.connectorTokens[0] = {
           ...pool.connectorTokens[0],
-          liquidityUSD: effToken,
+          liquidityUSD: tokenUsdLiquidity,
         };
       }
 
-      const liquidityUSD = effConnector || effToken || 0;
+      const liquidityUSD = connectorTokenUsdLiquidity || tokenUsdLiquidity || 0;
 
       return {
         ...pool,
