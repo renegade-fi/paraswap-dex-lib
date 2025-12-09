@@ -204,18 +204,6 @@ export const UniswapV3Config: DexConfigMap<DexParams> = {
       initHash: `0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54`,
       subgraphURL: 'FiJDXMFCBv88GP17g2TtPh8BcA8jZozn5WRW7hCN7cUT',
     },
-    [Network.AVALANCHE]: {
-      factory: '0x3e603C14aF37EBdaD31709C4f848Fc6aD5BEc715',
-      quoter: '0xb1E835Dc2785b52265711e17fCCb0fd018226a6e',
-      router: '0x24c90C7d8fb463722e304A71255341610Fa7589b',
-      supportedFees: SUPPORTED_FEES,
-      stateMulticall: '0x30F6B9b6485ff0B67E881f5ac80D3F1c70A4B23d',
-      uniswapMulticall: '0x8C0F842791F03C095b6c633759224FcC9ACe68ea',
-      chunksCount: 10,
-      initRetryFrequency: 10,
-      initHash: `0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54`,
-      subgraphURL: '4BxsTB5ADnYdgJgdmzyddmnDGCauctDia28uxB1hgTBE',
-    },
     [Network.SONIC]: {
       factory: '0x46B3fDF7b5CDe91Ac049936bF0bDb12c5d22202e',
       quoter: '0x5911cB3633e764939edc2d92b7e1ad375Bb57649',
@@ -298,27 +286,6 @@ export const UniswapV3Config: DexConfigMap<DexParams> = {
       initHash:
         '0x1565b129f2d1790f12d45301b9b084335626f0c92410bc43130763b69971135d',
       subgraphURL: 'G2tXDm6mgqBMuC7hq9GRVeTv5SRBAVnPFGcpGBab2cea',
-    },
-  },
-  PharaohV2: {
-    [Network.AVALANCHE]: {
-      factory: '0xAAA32926fcE6bE95ea2c51cB4Fcb60836D320C42',
-      deployer: '0x95120704f4E2D545Aea8b6B3c16d9Da1fa32E30F',
-      quoter: '0xAAAEA10b0e6FBe566FE27c3A023DC5D8cA6Bca3d',
-      router: '0xAAAE99091Fbb28D400029052821653C1C752483B',
-      supportedFees: RAMSES_FORKS_FEES,
-      stateMulticall: '0xd32C191e0febaa6Cc93A29Cb676474c72486E00b',
-      stateMultiCallAbi: RamsesV2StateMulticallABI as AbiItem[],
-      uniswapMulticall: '0x0139141Cd4Ee88dF3Cdb65881D411bAE271Ef0C2',
-      chunksCount: 10,
-      initRetryFrequency: 10,
-      eventPoolImplementation: RamsesV2EventPool,
-      decodeStateMultiCallResultWithRelativeBitmaps:
-        decodeStateMultiCallResultWithRelativeBitmapsForRamses,
-      initHash:
-        '0x1565b129f2d1790f12d45301b9b084335626f0c92410bc43130763b69971135d',
-      subgraphURL:
-        'https://api.studio.thegraph.com/query/66247/pharaoh-cl/version/latest',
     },
   },
   SpookySwapV3: {
