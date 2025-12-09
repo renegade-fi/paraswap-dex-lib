@@ -69,9 +69,11 @@ import {
   normalizeTokenAddress,
   getPairName,
   isStablePair,
+  denormalizeTokenAddress,
 } from './utils';
 import { Method } from '../../dex-helper/irequest-wrapper';
 import {
+  BlacklistError,
   SlippageCheckError,
   TooStrictSlippageCheckError,
 } from '../generic-rfq/types';
@@ -104,7 +106,10 @@ export class SwaapV2
     protected adapters = Adapters[network] || {},
     protected routerInterface = new Interface(routerAbi),
   ) {
-    super(dexHelper, dexKey);
+    super(dexHelper, dexKey, {
+      enablePairRestriction: true,
+      restrictPairTtlS: SWAAP_POOL_RESTRICT_TTL_S,
+    });
     this.logger = dexHelper.getLogger(`${dexKey}-${network}`);
     const token = dexHelper.config.data.swaapV2AuthToken;
     assert(
@@ -333,10 +338,6 @@ export class SwaapV2
     );
 
     try {
-      if (await this.isRestrictedPool(requestedPoolIdentifier)) {
-        return null;
-      }
-
       this.tokensMap = (await this.getCachedTokens()) || {};
 
       if (normalizedSrcToken.address === normalizedDestToken.address) {
@@ -444,10 +445,6 @@ export class SwaapV2
     }
   }
 
-  getBaseToken(poolIdentifier: string): string {
-    return poolIdentifier.split('_')[1];
-  }
-
   getDexParam(
     srcToken: string,
     destToken: string,
@@ -502,11 +499,7 @@ export class SwaapV2
       this.logger.warn(
         `${this.dexKey}-${this.network}: blacklisted TX Origin address '${options.txOrigin}' trying to build a transaction. Bailing...`,
       );
-      throw new Error(
-        `${this.dexKey}-${
-          this.network
-        }: user=${options.txOrigin.toLowerCase()} is blacklisted`,
-      );
+      throw new BlacklistError(this.dexKey, this.network, options.txOrigin);
     }
 
     const isSell = side === SwapSide.SELL;
@@ -643,6 +636,11 @@ export class SwaapV2
           this.logger.warn(
             `${prefix}: Encountered blacklisted user=${options.userAddress}. Adding to local blacklist cache`,
           );
+          throw new BlacklistError(
+            this.dexKey,
+            this.network,
+            options.userAddress,
+          );
         }
 
         if (e.response?.status === 429) {
@@ -652,6 +650,11 @@ export class SwaapV2
           );
           this.logger.warn(
             `${prefix}: Encountered restricted user=${options.userAddress}. Adding to local blacklist cache`,
+          );
+          throw new BlacklistError(
+            this.dexKey,
+            this.network,
+            options.userAddress,
           );
         }
       } else if (e instanceof TooStrictSlippageCheckError) {
@@ -668,24 +671,30 @@ export class SwaapV2
           normalizedSrcToken.address,
           normalizedDestToken.address,
         );
-        await this.restrictPool(message, poolIdentifier);
+
+        await this.restrictPairAndNotify(
+          srcToken.address,
+          destToken.address,
+          message,
+          poolIdentifier,
+        );
       }
 
       throw e;
     }
   }
 
-  async restrictPool(message: string, poolIdentifier: string): Promise<void> {
+  async restrictPairAndNotify(
+    token0: string,
+    token1: string,
+    message: string,
+    poolIdentifier: string,
+  ): Promise<void> {
     this.logger.warn(
       `${this.dexKey}-${this.network}: ${poolIdentifier} was restricted for ${SWAAP_POOL_RESTRICT_TTL_S} sec. due to fails`,
     );
 
-    // We use timestamp for creation date to later discern if it already expired or not
-    await this.dexHelper.cache.hset(
-      this.runtimeMMsRestrictHashMapKey,
-      poolIdentifier,
-      Date.now().toString(),
-    );
+    await this.restrictPair(token0, token1);
 
     this.rateFetcher
       .notify(SWAAP_BANNED_CODE, message, this.getNotifyReqParams())
@@ -700,20 +709,6 @@ export class SwaapV2
         // Must never happen
         this.logger.error(`Swaap API notification failed: ${e}`);
       });
-  }
-
-  async isRestrictedPool(poolIdentifier: string): Promise<boolean> {
-    const expirationThreshold = Date.now() - SWAAP_POOL_RESTRICT_TTL_S * 1000;
-    const createdAt = await this.dexHelper.cache.hget(
-      this.runtimeMMsRestrictHashMapKey,
-      poolIdentifier,
-    );
-    const wasNotRestricted = createdAt === null;
-    if (wasNotRestricted) {
-      return false;
-    }
-    const restrictionExpired = +createdAt < expirationThreshold;
-    return !restrictionExpired;
   }
 
   // Returns estimated gas cost of calldata for this DEX in multiSwap
@@ -964,12 +959,10 @@ export class SwaapV2
         const levelDoesNotIncludeToken =
           normalizedTokenAddress !== base && normalizedTokenAddress !== quote;
 
-        const poolIdentifier: string = getPoolIdentifier(
-          this.dexKey,
-          base,
-          quote,
+        const isRestrictedPool = await this.isRestrictedPair(
+          denormalizeTokenAddress(base),
+          denormalizeTokenAddress(quote),
         );
-        const isRestrictedPool = await this.isRestrictedPool(poolIdentifier);
 
         return {
           pair,

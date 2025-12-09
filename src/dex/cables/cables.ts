@@ -39,7 +39,7 @@ import {
 } from './constants';
 import { CablesRateFetcher } from './rate-fetcher';
 import { CablesData, CablesRFQResponse } from './types';
-import { SlippageCheckError } from '../generic-rfq/types';
+import { BlacklistError, SlippageCheckError } from '../generic-rfq/types';
 import mainnetRFQAbi from '../../abi/cables/CablesMainnetRFQ.json';
 import { Interface } from 'ethers/lib/utils';
 import BigNumber from 'bignumber.js';
@@ -116,7 +116,7 @@ export class Cables
     );
   }
 
-  async preProcessTransaction?(
+  async preProcessTransaction(
     optimalSwapExchange: OptimalSwapExchange<CablesData>,
     srcToken: Token,
     destToken: Token,
@@ -127,11 +127,7 @@ export class Cables
       this.logger.warn(
         `${this.dexKey}-${this.network}: blacklisted TX Origin address '${options.txOrigin}' trying to build a transaction. Bailing...`,
       );
-      throw new Error(
-        `${this.dexKey}-${
-          this.network
-        }: user=${options.txOrigin.toLowerCase()} is blacklisted`,
-      );
+      throw new BlacklistError(this.dexKey, this.network, options.txOrigin);
     }
 
     if (BigInt(optimalSwapExchange.srcAmount) === 0n) {

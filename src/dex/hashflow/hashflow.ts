@@ -32,6 +32,7 @@ import {
 } from '../../types';
 import { getDexKeysWithNetwork, Utils } from '../../utils';
 import {
+  BlacklistError,
   SlippageCheckError,
   TooStrictSlippageCheckError,
 } from '../generic-rfq/types';
@@ -542,11 +543,7 @@ export class Hashflow
       this.logger.warn(
         `${this.dexKey}-${this.network}: blacklisted TX Origin address '${options.txOrigin}' trying to build a transaction. Bailing...`,
       );
-      throw new Error(
-        `${this.dexKey}-${
-          this.network
-        }: user=${options.txOrigin.toLowerCase()} is blacklisted`,
-      );
+      throw new BlacklistError(this.dexKey, this.network, options.txOrigin);
     }
     const mm = optimalSwapExchange.data?.mm;
     assert(
@@ -721,6 +718,11 @@ export class Hashflow
           `${prefix}: Encountered restricted user=${options.userAddress}. Adding to local blacklist cache`,
         );
         await this.addBlacklistedAddress(options.userAddress);
+        throw new BlacklistError(
+          this.dexKey,
+          this.network,
+          options.userAddress,
+        );
       } else if (e instanceof TooStrictSlippageCheckError) {
         this.logger.warn(
           `${prefix}: Market Maker ${mm} failed to build transaction on side ${side} with too strict slippage. Skipping restriction ${e}`,

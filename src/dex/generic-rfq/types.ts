@@ -109,7 +109,11 @@ export class BlacklistError extends Error {
   cause = 'BlacklistError';
   code = 'BLACKLIST';
 
-  constructor(dexKey: string, network: Network, user: Address) {
+  constructor(
+    public dexKey: string,
+    public network: Network,
+    public user: Address,
+  ) {
     const message = `User address ${user} is blacklisted on ${dexKey}-${network}`;
     super(message);
     this.name = 'BlacklistError';
