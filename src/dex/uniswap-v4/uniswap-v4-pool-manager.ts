@@ -8,6 +8,7 @@ import {
   PoolManagerState,
   SubgraphConnectorPool,
   SubgraphPool,
+  PoolKey,
 } from './types';
 import { Address, Log, Logger } from '../../types';
 import UniswapV4StateViewABI from '../../abi/uniswap-v4/state-view.abi.json';
@@ -150,6 +151,14 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
       return null;
     }
 
+    const poolKey: PoolKey = {
+      currency0: subgraphPool.token0.address.toLowerCase(),
+      currency1: subgraphPool.token1.address.toLowerCase(),
+      fee: subgraphPool.fee,
+      tickSpacing: parseInt(subgraphPool.tickSpacing),
+      hooks: subgraphPool.hooks,
+    };
+
     eventPool = new UniswapV4Pool(
       this.dexHelper,
       this.parentName,
@@ -158,12 +167,12 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
       this.logger,
       this.mapKey,
       _poolId,
-      subgraphPool.token0.address.toLowerCase(),
-      subgraphPool.token1.address.toLowerCase(),
-      subgraphPool.fee,
-      subgraphPool.hooks,
-      subgraphPool.tickSpacing,
-      this.getHook(subgraphPool.hooks),
+      poolKey.currency0,
+      poolKey.currency1,
+      poolKey.fee,
+      poolKey.hooks,
+      poolKey.tickSpacing.toString(),
+      this.getHook(_poolId, poolKey),
     );
 
     await eventPool.initialize(blockNumber);
@@ -330,6 +339,8 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
       JSON.stringify(pools),
     );
 
+    this.registerHookPools(pools);
+
     return pools;
   }
 
@@ -386,6 +397,14 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
       tickSpacing: tickSpacing.toString(),
     });
 
+    const poolKey: PoolKey = {
+      currency0: currency0.toLowerCase(),
+      currency1: currency1.toLowerCase(),
+      fee: fee.toString(),
+      tickSpacing,
+      hooks,
+    };
+
     const eventPool = new UniswapV4Pool(
       this.dexHelper,
       this.parentName,
@@ -394,12 +413,12 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
       this.logger,
       this.mapKey,
       id,
-      currency0.toLowerCase(),
-      currency1.toLowerCase(),
-      fee,
-      hooks,
-      tickSpacing.toString(),
-      this.getHook(hooks),
+      poolKey.currency0,
+      poolKey.currency1,
+      poolKey.fee,
+      poolKey.hooks,
+      poolKey.tickSpacing.toString(),
+      this.getHook(id, poolKey),
     );
     await eventPool.initialize(log.blockNumber);
 
@@ -412,8 +431,28 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
     return +fee % 100 !== 0;
   }
 
-  private getHook(hookAddress: string): IBaseHook | undefined {
-    return this.hookInstancesByAddress[hookAddress.toLowerCase()];
+  private registerHookPools(pools: SubgraphPool[]) {
+    for (const pool of pools) {
+      const poolKey: PoolKey = {
+        currency0: pool.token0.address.toLowerCase(),
+        currency1: pool.token1.address.toLowerCase(),
+        fee: pool.fee,
+        tickSpacing: parseInt(pool.tickSpacing),
+        hooks: pool.hooks,
+      };
+
+      this.getHook(pool.id, poolKey);
+    }
+  }
+
+  private getHook(poolId: string, poolKey: PoolKey): IBaseHook | undefined {
+    const hook = this.hookInstancesByAddress[poolKey.hooks.toLowerCase()];
+    if (!hook) {
+      return undefined;
+    }
+
+    hook.registerPool(poolId, poolKey);
+    return hook;
   }
 
   private getBitmapRange() {

@@ -92,6 +92,12 @@ export class UniswapV4 extends SimpleExchange implements IDex<UniswapV4Data> {
 
   async initializePricing(blockNumber: number) {
     await this.poolManager.initialize(blockNumber);
+
+    await Promise.all(
+      this.supportedHooks.map(async hook => {
+        await hook.initialize(blockNumber);
+      }),
+    );
   }
 
   async addMasterPool(poolKey: string, blockNumber: number): Promise<boolean> {

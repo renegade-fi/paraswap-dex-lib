@@ -54,6 +54,10 @@ export interface IBaseHook {
 
   getHookPermissions(): HooksPermissions;
 
+  registerPool(poolId: string, poolKey: PoolKey): void;
+
+  initialize(blockNumber: number): Promise<void>;
+
   beforeInitialize?(
     sender: string,
     key: PoolKey,
