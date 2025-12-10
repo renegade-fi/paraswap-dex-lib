@@ -38,6 +38,7 @@ import {
   TICK_BITMAP_TO_USE,
   TICK_BITMAP_TO_USE_BY_CHAIN,
 } from './constants';
+import { IBaseHook } from './hooks/types';
 
 export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerState> {
   handlers: {
@@ -59,12 +60,15 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
   private wethAddress: string;
 
   private poolsCacheKey = 'pools_cache';
+  private supportedHookAddresses: string[];
+  private hookInstancesByAddress: Record<string, IBaseHook>;
 
   constructor(
     readonly dexHelper: IDexHelper,
     parentName: string,
     private readonly network: number,
     private readonly config: DexParams,
+    supportedHooks: IBaseHook[],
     protected logger: Logger,
     mapKey: string = '',
   ) {
@@ -86,6 +90,15 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
       this.dexHelper.config.data.wrappedNativeTokenAddress.toLowerCase();
 
     this.logDecoder = (log: Log) => this.poolManagerIface.parseLog(log);
+
+    this.hookInstancesByAddress = Object.fromEntries(
+      supportedHooks.map(hook => [hook.address.toLowerCase(), hook]),
+    );
+
+    this.supportedHookAddresses = [
+      NULL_ADDRESS, // always include pools without hooks
+      ...Object.keys(this.hookInstancesByAddress),
+    ];
 
     // Add handlers
     this.handlers['Initialize'] = this.handleInitializeEvent.bind(this);
@@ -150,6 +163,7 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
       subgraphPool.fee,
       subgraphPool.hooks,
       subgraphPool.tickSpacing,
+      this.getHook(subgraphPool.hooks),
     );
 
     await eventPool.initialize(blockNumber);
@@ -220,7 +234,9 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
     const staticPoolsList = UniswapV4PoolsList[this.network];
 
     if (staticPoolsList) {
-      return staticPoolsList;
+      return staticPoolsList.filter(pool =>
+        this.isHookSupported(pool.hooks.toLowerCase()),
+      );
     }
 
     const cachedPoolsRaw = await this.dexHelper.cache.getAndCacheLocally(
@@ -255,6 +271,7 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
 
     try {
       const defaultPerPageLimit = 1000;
+      const hooksToQuery = this.supportedHookAddresses;
       let curPage = 0;
 
       let currentSubgraphPools: SubgraphPool[] =
@@ -266,6 +283,7 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
           blockNumber,
           curPage * defaultPerPageLimit,
           defaultPerPageLimit,
+          hooksToQuery,
         );
       pools = pools.concat(currentSubgraphPools);
 
@@ -280,6 +298,7 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
             blockNumber,
             curPage * defaultPerPageLimit,
             defaultPerPageLimit,
+            hooksToQuery,
           );
 
         pools = pools.concat(currentSubgraphPools);
@@ -327,7 +346,7 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
     const sqrtPriceX96 = BigInt(event.args.sqrtPriceX96);
     const tick = parseInt(event.args.tick);
 
-    if (hooks !== NULL_ADDRESS) {
+    if (!this.isHookSupported(hooks.toLowerCase())) {
       this.logger.warn(
         `Pool ${id} has hooks ${hooks}, which is not supported yet. Skipping.`,
       );
@@ -380,6 +399,7 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
       fee,
       hooks,
       tickSpacing.toString(),
+      this.getHook(hooks),
     );
     await eventPool.initialize(log.blockNumber);
 
@@ -390,6 +410,10 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
 
   private isPoolWithUnconventionalFees(fee: string | number): boolean {
     return +fee % 100 !== 0;
+  }
+
+  private getHook(hookAddress: string): IBaseHook | undefined {
+    return this.hookInstancesByAddress[hookAddress.toLowerCase()];
   }
 
   private getBitmapRange() {
@@ -504,5 +528,9 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
     });
 
     return poolStates;
+  }
+
+  private isHookSupported(hook: string): boolean {
+    return this.supportedHookAddresses.includes(hook.toLowerCase());
   }
 }
