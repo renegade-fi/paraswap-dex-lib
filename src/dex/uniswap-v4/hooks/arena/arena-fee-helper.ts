@@ -107,7 +107,7 @@ export class ArenaFeeHelper extends StatefulEventSubscriber<ArenaFeeHelperState>
       calls.push({
         target: this.feeHelperAddress,
         callData: this.feeHelper.interface.encodeFunctionData(
-          'getTotalFeePpm',
+          'poolIdToTotalFeePpm',
           [poolId],
         ),
         decodeFunction: uint256ToBigInt,
