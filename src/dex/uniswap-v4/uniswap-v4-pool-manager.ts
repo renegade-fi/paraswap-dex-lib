@@ -270,6 +270,7 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
         cachedPools.length &&
         poolsTTL > POOL_CACHE_STORE_INTERVAL - POOL_CACHE_REFRESH_INTERVAL
       ) {
+        this.registerHookPools(cachedPools);
         return cachedPools;
       }
 
