@@ -1,4 +1,3 @@
-import { Contract } from 'ethers';
 import { IDexHelper } from '../../../../dex-helper';
 import { ArenaHookConfig } from './config';
 import { Network } from '../../../../constants';
@@ -11,8 +10,8 @@ import {
   IBaseHook,
 } from '../types';
 import { toId } from '../../utils';
-import ArenaFeeHelperABI from '../../../../abi/uniswap-v4/hooks/arena/arena-fee-helper.abi.json';
 import { _require } from '../../../../utils';
+import { ArenaFeeHelper } from './arena-fee-helper';
 
 const MAX_HOOK_FEE = 1_000_000n; // 100%
 const UINT128_MAX = (1n << 128n) - 1n;
@@ -21,6 +20,7 @@ const INT128_MAX = (1n << 127n) - 1n;
 export class ArenaHook implements IBaseHook {
   readonly name = this.constructor.name;
   readonly address: string;
+  readonly arenaFeeHelper: ArenaFeeHelper;
 
   constructor(
     readonly dexHelper: IDexHelper,
@@ -29,13 +29,25 @@ export class ArenaHook implements IBaseHook {
     readonly feeHelperAddress = ArenaHookConfig[
       network
     ].feeHelperAddress.toLowerCase(),
-    readonly arenaFeeHelper = new Contract(
-      feeHelperAddress,
-      ArenaFeeHelperABI,
-      dexHelper.provider,
-    ),
   ) {
     this.address = ArenaHookConfig[network].hookAddress.toLowerCase();
+
+    this.arenaFeeHelper = new ArenaFeeHelper(
+      this.name,
+      network,
+      dexHelper,
+      logger,
+    );
+  }
+
+  registerPool(poolId: string, _poolKey: PoolKey) {
+    this.arenaFeeHelper.addPoolIds([poolId]);
+  }
+
+  async initialize(blockNumber: number) {
+    if (!this.arenaFeeHelper.isInitialized) {
+      await this.arenaFeeHelper.initialize(blockNumber);
+    }
   }
 
   getHookPermissions(): HooksPermissions {
@@ -84,9 +96,7 @@ export class ArenaHook implements IBaseHook {
       'output <= UINT128_MAX',
     );
 
-    const totalFeePpm = BigInt(
-      (await this.arenaFeeHelper.getTotalFeePpm(toId(key))).toString(),
-    );
+    const totalFeePpm = this.getTotalFeePpm(toId(key));
 
     if (totalFeePpm === 0n) {
       return 0n;
@@ -111,5 +121,20 @@ export class ArenaHook implements IBaseHook {
     const netOutput = isExactInput ? output - feeAmount : output + feeAmount;
 
     return netOutput;
+  }
+
+  private getTotalFeePpm(poolId: string): bigint {
+    if (!this.arenaFeeHelper?.isInitialized) {
+      return 0n;
+    }
+
+    const state = this.arenaFeeHelper.getStaleState();
+    if (!state) {
+      return 0n;
+    }
+
+    const poolFee = state.poolIdToTotalFeePpm[poolId] ?? 0n;
+
+    return poolFee + BigInt(state.protocolFeePpm);
   }
 }
