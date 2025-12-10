@@ -1,0 +1,11 @@
+[
+  {
+    "inputs": [
+      { "internalType": "PoolId", "name": "poolId", "type": "bytes32" }
+    ],
+    "name": "getTotalFeePpm",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
