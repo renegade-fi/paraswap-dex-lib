@@ -502,7 +502,8 @@ export const UniswapV3Config: DexConfigMap<DexParams> = {
       chunksCount: 10,
       initRetryFrequency: 10,
       initHash: '0x942e97a4c6FdC38B4CD1c0298D37d81fDD8E5A16', // pool implementation address from factory contract is used instead of initHash here
-      subgraphURL: 'GENunSHWLBXm59mBSgPzQ8metBEp9YDfdqwFr91Av1UM',
+      subgraphURL: 'EeEmhjkK76RKQpZcfT2S8ZxzcV6Saq4RUw6krq1KuDJu',
+      liquidityField: 'liquidity',
     },
   },
   PangolinV3: {
