@@ -80,12 +80,13 @@ export class ArenaHook implements IBaseHook {
 
     const isExactInput = BigInt(amountSpecified) < 0n;
 
-    let unspecifiedDelta: bigint;
-    if (isExactInput === zeroForOne) {
-      unspecifiedDelta = delta.amount1;
-    } else {
-      unspecifiedDelta = delta.amount0;
-    }
+    // Determine the unspecified (output) delta based on swap direction and type:
+    // - ExactInput + zeroForOne: input is token0, output is token1 (amount1)
+    // - ExactInput + oneForZero: input is token1, output is token0 (amount0)
+    // - ExactOutput + zeroForOne: output is token1, input is token0 (amount0 is unspecified)
+    // - ExactOutput + oneForZero: output is token0, input is token1 (amount1 is unspecified)
+    const outputIsToken1 = isExactInput === zeroForOne;
+    const unspecifiedDelta = outputIsToken1 ? delta.amount1 : delta.amount0;
 
     if (unspecifiedDelta === 0n) {
       return 0n;
@@ -103,7 +104,7 @@ export class ArenaHook implements IBaseHook {
     const totalFeePpm = this.getTotalFeePpm(toId(key));
 
     if (totalFeePpm === 0n) {
-      return 0n;
+      return output;
     }
 
     _require(
@@ -122,6 +123,8 @@ export class ArenaHook implements IBaseHook {
       'feeAmount <= INT128_MAX',
     );
 
+    // For exact input: user receives output minus fee
+    // For exact output: user must provide more input to cover fee
     const netOutput = isExactInput ? output - feeAmount : output + feeAmount;
 
     return netOutput;
