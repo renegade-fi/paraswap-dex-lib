@@ -355,8 +355,6 @@ export class UniswapV4PoolManager extends StatefulEventSubscriber<PoolManagerSta
     const fee = event.args.fee;
     const tickSpacing = parseInt(event.args.tickSpacing);
     const hooks = event.args.hooks;
-    const sqrtPriceX96 = BigInt(event.args.sqrtPriceX96);
-    const tick = parseInt(event.args.tick);
 
     if (!this.isHookSupported(hooks.toLowerCase())) {
       this.logger.warn(
