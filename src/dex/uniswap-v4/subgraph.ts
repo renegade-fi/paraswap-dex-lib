@@ -141,54 +141,31 @@ export async function queryAvailablePoolsForToken(
   }
 `;
 
-  const fetchPools = async (hookList: string[], minTVL: number) => {
-    const res = await dexHelper.httpRequest.querySubgraph<{
-      data: {
-        pools0: SubgraphConnectorPool[];
-        pools1: SubgraphConnectorPool[];
-      };
-      errors?: { message: string }[];
-    }>(
-      subgraphUrl,
-      {
-        query: poolsQuery,
-        variables: {
-          token: tokenAddress,
-          count: limit,
-          hooks: hookList,
-          minTVL,
-        },
+  const res = await dexHelper.httpRequest.querySubgraph<{
+    data: {
+      pools0: SubgraphConnectorPool[];
+      pools1: SubgraphConnectorPool[];
+    };
+    errors?: { message: string }[];
+  }>(
+    subgraphUrl,
+    {
+      query: poolsQuery,
+      variables: {
+        token: tokenAddress,
+        count: limit,
+        hooks,
+        minTVL: POOL_MIN_TVL_USD,
       },
-      { timeout: SUBGRAPH_TIMEOUT },
-    );
+    },
+    { timeout: SUBGRAPH_TIMEOUT },
+  );
 
-    if (res.errors && res.errors.length) {
-      throw new Error(res.errors[0].message);
-    }
-
-    return res.data;
-  };
-
-  const hooksWithNoMinTvl = hooks.filter(h => h !== NULL_ADDRESS);
-  const hooksWithMinTvl = hooks.includes(NULL_ADDRESS) ? [NULL_ADDRESS] : [];
-
-  const results: {
-    pools0: SubgraphConnectorPool[];
-    pools1: SubgraphConnectorPool[];
-  }[] = [];
-
-  if (hooksWithNoMinTvl.length) {
-    results.push(await fetchPools(hooksWithNoMinTvl, 0));
+  if (res.errors && res.errors.length) {
+    throw new Error(res.errors[0].message);
   }
 
-  if (hooksWithMinTvl.length) {
-    results.push(await fetchPools(hooksWithMinTvl, POOL_MIN_TVL_USD));
-  }
-
-  return {
-    pools0: results.flatMap(r => r.pools0),
-    pools1: results.flatMap(r => r.pools1),
-  };
+  return res.data;
 }
 
 export async function queryAvailablePoolsForPairFromSubgraph(
@@ -196,13 +173,13 @@ export async function queryAvailablePoolsForPairFromSubgraph(
   subgraphUrl: string,
   srcToken: Address,
   destToken: Address,
-  hooks: string = NULL_ADDRESS,
+  hooks: string[] = [NULL_ADDRESS],
 ): Promise<SubgraphPool[]> {
   const ticksLimit = 300;
 
-  const poolsQuery = `query ($token0: Bytes!, $token1: Bytes!, $minTVL: Int!, $hooks: Bytes!) {
+  const poolsQuery = `query ($token0: Bytes!, $token1: Bytes!, $minTVL: Int!, $hooks: [Bytes!]) {
       pools(
-        where: { token0: $token0, token1: $token1, hooks: $hooks, liquidity_gt: 0, totalValueLockedUSD_gte: $minTVL },
+        where: { token0: $token0, token1: $token1, hooks_in: $hooks, liquidity_gt: 0, totalValueLockedUSD_gte: $minTVL },
         orderBy: totalValueLockedUSD
         orderDirection: desc
       ) {
@@ -243,7 +220,7 @@ export async function queryAvailablePoolsForPairFromSubgraph(
       variables: {
         token0,
         token1,
-        minTVL: hooks === NULL_ADDRESS ? POOL_MIN_TVL_USD : 0,
+        minTVL: POOL_MIN_TVL_USD,
         hooks,
       },
     },
@@ -268,11 +245,7 @@ export async function queryOnePageForAllAvailablePoolsFromSubgraph(
   hooks: string[] = [NULL_ADDRESS],
   latestBlock = false,
 ): Promise<SubgraphPool[]> {
-  const hooksWithNoMinTvl = hooks.filter(h => h !== NULL_ADDRESS);
-  const hooksWithMinTvl = hooks.includes(NULL_ADDRESS) ? [NULL_ADDRESS] : [];
-
-  const fetchPage = async (hookList: string[], minTVL: number) => {
-    const poolsQuery = `query ($skip: Int!, $minTVL: Int!, $hooks: [Bytes!]) {
+  const poolsQuery = `query ($skip: Int!, $minTVL: Int!, $hooks: [Bytes!]) {
       pools(
         where: { hooks_in: $hooks, liquidity_gt: 0, totalValueLockedUSD_gte: $minTVL },
         ${latestBlock ? '' : `block: { number: ${blockNumber} }`}
@@ -295,67 +268,54 @@ export async function queryOnePageForAllAvailablePoolsFromSubgraph(
       }
     }`;
 
-    const res = await dexHelper.httpRequest.querySubgraph<{
-      data: {
-        pools: SubgraphPool[];
-      };
-      errors?: { message: string }[];
-    }>(
-      subgraphUrl,
-      {
-        query: poolsQuery,
-        variables: {
-          skip: skip,
-          hooks: hookList,
-          minTVL,
-        },
+  const res = await dexHelper.httpRequest.querySubgraph<{
+    data: {
+      pools: SubgraphPool[];
+    };
+    errors?: { message: string }[];
+  }>(
+    subgraphUrl,
+    {
+      query: poolsQuery,
+      variables: {
+        skip,
+        hooks,
+        minTVL: POOL_MIN_TVL_USD,
       },
-      { timeout: SUBGRAPH_TIMEOUT },
-    );
+    },
+    { timeout: SUBGRAPH_TIMEOUT },
+  );
 
-    if (res.errors && res.errors.length) {
-      if (res.errors[0].message.includes('missing block')) {
-        logger.info(`${dexKey}: subgraph fallback to the latest block...`);
-        return queryOnePageForAllAvailablePoolsFromSubgraph(
-          dexHelper,
-          logger,
-          dexKey,
-          subgraphUrl,
-          blockNumber,
-          skip,
-          limit,
-          hookList,
-          true,
-        );
-      } else {
-        throw new Error(res.errors[0].message);
-      }
+  if (res.errors && res.errors.length) {
+    if (res.errors[0].message.includes('missing block')) {
+      logger.info(`${dexKey}: subgraph fallback to the latest block...`);
+      return queryOnePageForAllAvailablePoolsFromSubgraph(
+        dexHelper,
+        logger,
+        dexKey,
+        subgraphUrl,
+        blockNumber,
+        skip,
+        limit,
+        hooks,
+        true,
+      );
+    } else {
+      throw new Error(res.errors[0].message);
     }
-
-    return res.data.pools;
-  };
-
-  const pools: SubgraphPool[] = [];
-
-  if (hooksWithNoMinTvl.length) {
-    pools.push(...(await fetchPage(hooksWithNoMinTvl, 0)));
   }
 
-  if (hooksWithMinTvl.length) {
-    pools.push(...(await fetchPage(hooksWithMinTvl, POOL_MIN_TVL_USD)));
-  }
-
-  return pools;
+  return res.data.pools;
 }
 
 export async function queryPoolsFromSubgraph(
   dexHelper: IDexHelper,
   subgraphUrl: string,
   poolIds: string[],
-  hooks: string = NULL_ADDRESS,
-): Promise<SubgraphPool[] | null> {
-  const poolsQuery = `query ($minTVL: Int!, $hooks: Bytes!, $pools: [Bytes!]!) {
-      pools(where: {liquidity_gt: 0, totalValueLockedUSD_gte: $minTVL, id_in: $pools}) {
+  hooks: string[] = [NULL_ADDRESS],
+): Promise<SubgraphPool[]> {
+  const poolsQuery = `query ($minTVL: Int!, $hooks: [Bytes!], $pools: [Bytes!]!) {
+      pools(where: {liquidity_gt: 0, totalValueLockedUSD_gte: $minTVL, id_in: $pools, hooks_in: $hooks}) {
         id
         fee: feeTier
         volumeUSD
@@ -381,12 +341,16 @@ export async function queryPoolsFromSubgraph(
       query: poolsQuery,
       variables: {
         hooks,
-        minTVL: hooks === NULL_ADDRESS ? POOL_MIN_TVL_USD : 0,
+        minTVL: POOL_MIN_TVL_USD,
         pools: poolIds,
       },
     },
     { timeout: SUBGRAPH_TIMEOUT },
   );
 
-  return res?.data?.pools ?? null;
+  if (res.errors && res.errors.length) {
+    throw new Error(res.errors[0].message);
+  }
+
+  return res?.data?.pools ?? [];
 }
