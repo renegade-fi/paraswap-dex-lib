@@ -58,32 +58,28 @@ export interface IBaseHook {
 
   initialize(blockNumber: number): Promise<void>;
 
-  beforeInitialize?(
-    sender: string,
-    key: PoolKey,
-    sqrtPriceX96: string,
-  ): Promise<string>; // bytes4
+  beforeInitialize?(sender: string, key: PoolKey, sqrtPriceX96: string): string; // bytes4
 
   afterInitialize?(
     sender: string,
     key: PoolKey,
     sqrtPriceX96: string,
     tick: number,
-  ): Promise<string>; // bytes4
+  ): string; // bytes4
 
   beforeAddLiquidity?(
     sender: string,
     key: PoolKey,
     params: ModifyLiquidityParams,
     hookData: string,
-  ): Promise<string>;
+  ): string;
 
   beforeRemoveLiquidity?(
     sender: string,
     key: PoolKey,
     params: ModifyLiquidityParams,
     hookData: string,
-  ): Promise<string>;
+  ): string;
 
   afterAddLiquidity?(
     sender: string,
@@ -92,7 +88,7 @@ export interface IBaseHook {
     delta0: BalanceDelta,
     delta1: BalanceDelta,
     hookData: string,
-  ): Promise<[string, BalanceDelta]>;
+  ): [string, BalanceDelta];
 
   afterRemoveLiquidity?(
     sender: string,
@@ -101,14 +97,14 @@ export interface IBaseHook {
     delta0: BalanceDelta,
     delta1: BalanceDelta,
     hookData: string,
-  ): Promise<[string, BalanceDelta]>;
+  ): [string, BalanceDelta];
 
   beforeSwap?(
     sender: string,
     key: PoolKey,
     params: SwapParams,
     hookData: string,
-  ): Promise<[string, BeforeSwapDelta, number]>; // bytes4, BeforeSwapDelta, uint24
+  ): [string, BeforeSwapDelta, number]; // bytes4, BeforeSwapDelta, uint24
 
   afterSwap?(
     sender: string,
@@ -116,7 +112,7 @@ export interface IBaseHook {
     params: SwapParams,
     delta: BalanceDelta,
     hookData: string,
-  ): Promise<bigint>; // int128
+  ): bigint; // int128
 
   beforeDonate?(
     sender: string,
@@ -124,7 +120,7 @@ export interface IBaseHook {
     amount0: string,
     amount1: string,
     hookData: string,
-  ): Promise<string>;
+  ): string;
 
   afterDonate?(
     sender: string,
@@ -132,7 +128,7 @@ export interface IBaseHook {
     amount0: string,
     amount1: string,
     hookData: string,
-  ): Promise<string>;
+  ): string;
 }
 
 export type HookConstructor = new (

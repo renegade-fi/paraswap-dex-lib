@@ -69,13 +69,13 @@ export class ArenaHook implements IBaseHook {
     };
   }
 
-  async afterSwap(
+  afterSwap(
     _sender: string,
     key: PoolKey,
     params: SwapParams,
     delta: BalanceDelta,
     _hookData: string,
-  ): Promise<bigint> {
+  ): bigint {
     const amountSpecified = BigInt(params.amountSpecified);
     const isExactInput = amountSpecified < 0n;
     const unspecifiedDelta =

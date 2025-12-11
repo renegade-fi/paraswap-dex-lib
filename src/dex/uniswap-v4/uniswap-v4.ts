@@ -76,7 +76,7 @@ export class UniswapV4 extends SimpleExchange implements IDex<UniswapV4Data> {
     const dexConfig = UniswapV4Config[dexKey][network];
     this.supportedHooks =
       dexConfig.supportedHooks?.map(
-        HookCtor => new HookCtor(this.dexHelper, network, this.logger),
+        Hook => new Hook(this.dexHelper, network, this.logger),
       ) ?? [];
 
     this.poolManager = new UniswapV4PoolManager(
@@ -144,16 +144,16 @@ export class UniswapV4 extends SimpleExchange implements IDex<UniswapV4Data> {
     return eventPools.map(eventPool => eventPool!.poolId);
   }
 
-  protected async _getOutputs(
+  protected _getOutputs(
     pool: Pool,
     state: DeepReadonly<PoolState>,
     amounts: bigint[],
     zeroForOne: boolean,
     side: SwapSide,
     hook?: IBaseHook,
-  ): Promise<bigint[] | null> {
+  ): bigint[] | null {
     try {
-      const outputsResult = await uniswapV4PoolMath.queryOutputs(
+      const outputsResult = uniswapV4PoolMath.queryOutputs(
         pool,
         state,
         amounts,
@@ -226,7 +226,7 @@ export class UniswapV4 extends SimpleExchange implements IDex<UniswapV4Data> {
 
       let prices: bigint[] | null;
       if (poolState !== null && poolState.isValid) {
-        prices = await this._getOutputs(
+        prices = this._getOutputs(
           pool,
           poolState,
           amounts,
