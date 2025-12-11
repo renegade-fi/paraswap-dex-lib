@@ -1,66 +1,9 @@
 import { SubgraphConnectorPool, SubgraphPool, SubgraphTick } from './types';
-import {
-  POOL_MIN_TVL_USD,
-  HOOKED_POOL_MIN_TVL_USD,
-  SUBGRAPH_TIMEOUT,
-} from './constants';
+import { POOL_MIN_TVL_USD, SUBGRAPH_TIMEOUT } from './constants';
 import { IDexHelper } from '../../dex-helper';
 import { Logger } from 'log4js';
 import { Address } from '@paraswap/core';
 import { NULL_ADDRESS } from '../../constants';
-
-type HookGroup = { hooks: string[]; minTVL: number };
-
-// Helper to build hook groups based on provided hooks and their min TVL requirements
-const buildHookGroups = (hooks: string[]): HookGroup[] => {
-  const hooked = hooks.filter(h => h !== NULL_ADDRESS);
-  const hookless = hooks.includes(NULL_ADDRESS) ? [NULL_ADDRESS] : [];
-
-  const groups: HookGroup[] = [];
-
-  if (hookless.length) {
-    groups.push({ hooks: hookless, minTVL: POOL_MIN_TVL_USD });
-  }
-
-  if (hooked.length) {
-    groups.push({ hooks: hooked, minTVL: HOOKED_POOL_MIN_TVL_USD });
-  }
-
-  return groups;
-};
-
-// Helper to fetch per hook group while honoring global skip/limit across groups
-const fetchByHookGroups = async <T>(
-  groups: HookGroup[],
-  skip: number,
-  limit: number,
-  fetcher: (group: HookGroup, count: number) => Promise<T[]>,
-): Promise<T[]> => {
-  let remainingSkip = skip;
-  let remainingLimit = limit;
-  const merged: T[] = [];
-
-  for (const group of groups) {
-    if (remainingLimit <= 0) break;
-
-    const fetchCount = remainingLimit + remainingSkip;
-    if (fetchCount <= 0) continue;
-
-    const data = await fetcher(group, fetchCount);
-
-    if (remainingSkip >= data.length) {
-      remainingSkip -= data.length;
-      continue;
-    }
-
-    const usable = data.slice(remainingSkip, remainingSkip + remainingLimit);
-    merged.push(...usable);
-    remainingLimit -= usable.length;
-    remainingSkip = 0;
-  }
-
-  return merged;
-};
 
 export async function queryTicksForPool(
   dexHelper: IDexHelper,
@@ -139,7 +82,6 @@ export async function queryAvailablePoolsForToken(
   pools0: SubgraphConnectorPool[];
   pools1: SubgraphConnectorPool[];
 }> {
-  const hookGroups = buildHookGroups(hooks);
   const list = staticPoolsList
     ? staticPoolsList.map(t => `"${t}"`).join(',')
     : '';
@@ -199,55 +141,31 @@ export async function queryAvailablePoolsForToken(
   }
 `;
 
-  const fetch = async (group: HookGroup, count: number) => {
-    const res = await dexHelper.httpRequest.querySubgraph<{
-      data: {
-        pools0: SubgraphConnectorPool[];
-        pools1: SubgraphConnectorPool[];
-      };
-      errors?: { message: string }[];
-    }>(
-      subgraphUrl,
-      {
-        query: poolsQuery,
-        variables: {
-          token: tokenAddress,
-          count,
-          hooks: group.hooks,
-          minTVL: group.minTVL,
-        },
+  const res = await dexHelper.httpRequest.querySubgraph<{
+    data: {
+      pools0: SubgraphConnectorPool[];
+      pools1: SubgraphConnectorPool[];
+    };
+    errors?: { message: string }[];
+  }>(
+    subgraphUrl,
+    {
+      query: poolsQuery,
+      variables: {
+        token: tokenAddress,
+        count: limit,
+        hooks,
+        minTVL: POOL_MIN_TVL_USD,
       },
-      { timeout: SUBGRAPH_TIMEOUT },
-    );
-
-    if (res.errors && res.errors.length) {
-      throw new Error(res.errors[0].message);
-    }
-
-    return res.data;
-  };
-
-  const pools0 = await fetchByHookGroups(
-    hookGroups,
-    0,
-    limit,
-    async (group, count) => {
-      const data = await fetch(group, count);
-      return data.pools0;
     },
+    { timeout: SUBGRAPH_TIMEOUT },
   );
 
-  const pools1 = await fetchByHookGroups(
-    hookGroups,
-    0,
-    limit,
-    async (group, count) => {
-      const data = await fetch(group, count);
-      return data.pools1;
-    },
-  );
+  if (res.errors && res.errors.length) {
+    throw new Error(res.errors[0].message);
+  }
 
-  return { pools0, pools1 };
+  return res.data;
 }
 
 export async function queryAvailablePoolsForPairFromSubgraph(
@@ -258,7 +176,6 @@ export async function queryAvailablePoolsForPairFromSubgraph(
   hooks: string[] = [NULL_ADDRESS],
 ): Promise<SubgraphPool[]> {
   const ticksLimit = 300;
-  const hookGroups = buildHookGroups(hooks);
 
   const poolsQuery = `query ($token0: Bytes!, $token1: Bytes!, $minTVL: Int!, $hooks: [Bytes!]) {
       pools(
@@ -291,34 +208,30 @@ export async function queryAvailablePoolsForPairFromSubgraph(
       ? [srcToken, destToken]
       : [destToken, srcToken];
 
-  const pools: SubgraphPool[] = [];
-
-  for (const group of hookGroups) {
-    const res = await dexHelper.httpRequest.querySubgraph<{
-      data: { pools: SubgraphPool[] };
-      errors?: { message: string }[];
-    }>(
-      subgraphUrl,
-      {
-        query: poolsQuery,
-        variables: {
-          token0,
-          token1,
-          minTVL: group.minTVL,
-          hooks: group.hooks,
-        },
+  const res = await dexHelper.httpRequest.querySubgraph<{
+    data: {
+      pools: SubgraphPool[];
+    };
+    errors?: { message: string }[];
+  }>(
+    subgraphUrl,
+    {
+      query: poolsQuery,
+      variables: {
+        token0,
+        token1,
+        minTVL: POOL_MIN_TVL_USD,
+        hooks,
       },
-      { timeout: SUBGRAPH_TIMEOUT },
-    );
+    },
+    { timeout: SUBGRAPH_TIMEOUT },
+  );
 
-    if (res.errors && res.errors.length) {
-      throw new Error(res.errors[0].message);
-    }
-
-    pools.push(...res.data.pools);
+  if (res.errors && res.errors.length) {
+    throw new Error(res.errors[0].message);
   }
 
-  return pools;
+  return res.data.pools;
 }
 
 export async function queryOnePageForAllAvailablePoolsFromSubgraph(
@@ -332,76 +245,67 @@ export async function queryOnePageForAllAvailablePoolsFromSubgraph(
   hooks: string[] = [NULL_ADDRESS],
   latestBlock = false,
 ): Promise<SubgraphPool[]> {
-  const hookGroups = buildHookGroups(hooks);
-
-  return fetchByHookGroups(
-    hookGroups,
-    skip,
-    limit,
-    async (group, count): Promise<SubgraphPool[]> => {
-      const runQuery = async (useLatestBlock: boolean) => {
-        const poolsQuery = `query ($skip: Int!, $minTVL: Int!, $hooks: [Bytes!]) {
-          pools(
-            where: { hooks_in: $hooks, liquidity_gt: 0, totalValueLockedUSD_gte: $minTVL },
-            ${useLatestBlock ? '' : `block: { number: ${blockNumber} }`}
-            orderBy: totalValueLockedUSD
-            orderDirection: desc
-            skip: $skip
-            first: ${count}
-          ) {
-          id
-          fee: feeTier
-          volumeUSD
-          tickSpacing
-          token0 {
-            address: id
-          }
-          token1 {
-            address: id
-          }
-            hooks
-          }
-        }`;
-
-        const res = await dexHelper.httpRequest.querySubgraph<{
-          data: { pools: SubgraphPool[] };
-          errors?: { message: string }[];
-        }>(
-          subgraphUrl,
-          {
-            query: poolsQuery,
-            variables: {
-              skip: 0,
-              hooks: group.hooks,
-              minTVL: group.minTVL,
-            },
-          },
-          { timeout: SUBGRAPH_TIMEOUT },
-        );
-
-        if (res.errors && res.errors.length) {
-          throw new Error(res.errors[0].message);
+  const poolsQuery = `query ($skip: Int!, $minTVL: Int!, $hooks: [Bytes!]) {
+      pools(
+        where: { hooks_in: $hooks, liquidity_gt: 0, totalValueLockedUSD_gte: $minTVL },
+        ${latestBlock ? '' : `block: { number: ${blockNumber} }`}
+        orderBy: totalValueLockedUSD
+        orderDirection: desc
+        skip: $skip
+        first: ${limit}
+      ) {
+        id
+        fee: feeTier
+        volumeUSD
+        tickSpacing
+        token0 {
+          address: id
         }
-
-        return res.data.pools;
-      };
-
-      try {
-        return await runQuery(latestBlock);
-      } catch (err: any) {
-        if (
-          err?.message &&
-          typeof err.message === 'string' &&
-          err.message.includes('missing block') &&
-          !latestBlock
-        ) {
-          logger.info(`${dexKey}: subgraph fallback to the latest block...`);
-          return runQuery(true);
+        token1 {
+          address: id
         }
-        throw err;
+        hooks
       }
+    }`;
+
+  const res = await dexHelper.httpRequest.querySubgraph<{
+    data: {
+      pools: SubgraphPool[];
+    };
+    errors?: { message: string }[];
+  }>(
+    subgraphUrl,
+    {
+      query: poolsQuery,
+      variables: {
+        skip,
+        hooks,
+        minTVL: POOL_MIN_TVL_USD,
+      },
     },
+    { timeout: SUBGRAPH_TIMEOUT },
   );
+
+  if (res.errors && res.errors.length) {
+    if (res.errors[0].message.includes('missing block')) {
+      logger.info(`${dexKey}: subgraph fallback to the latest block...`);
+      return queryOnePageForAllAvailablePoolsFromSubgraph(
+        dexHelper,
+        logger,
+        dexKey,
+        subgraphUrl,
+        blockNumber,
+        skip,
+        limit,
+        hooks,
+        true,
+      );
+    } else {
+      throw new Error(res.errors[0].message);
+    }
+  }
+
+  return res.data.pools;
 }
 
 export async function queryPoolsFromSubgraph(
@@ -410,7 +314,6 @@ export async function queryPoolsFromSubgraph(
   poolIds: string[],
   hooks: string[] = [NULL_ADDRESS],
 ): Promise<SubgraphPool[]> {
-  const hookGroups = buildHookGroups(hooks);
   const poolsQuery = `query ($minTVL: Int!, $hooks: [Bytes!], $pools: [Bytes!]!) {
       pools(where: {liquidity_gt: 0, totalValueLockedUSD_gte: $minTVL, id_in: $pools, hooks_in: $hooks}) {
         id
@@ -427,33 +330,27 @@ export async function queryPoolsFromSubgraph(
       }
     }`;
 
-  const results: SubgraphPool[] = [];
-
-  for (const group of hookGroups) {
-    const res = await dexHelper.httpRequest.querySubgraph<{
-      data: {
-        pools: SubgraphPool[];
-      };
-      errors?: { message: string }[];
-    }>(
-      subgraphUrl,
-      {
-        query: poolsQuery,
-        variables: {
-          hooks: group.hooks,
-          minTVL: group.minTVL,
-          pools: poolIds,
-        },
+  const res = await dexHelper.httpRequest.querySubgraph<{
+    data: {
+      pools: SubgraphPool[];
+    };
+    errors?: { message: string }[];
+  }>(
+    subgraphUrl,
+    {
+      query: poolsQuery,
+      variables: {
+        hooks,
+        minTVL: POOL_MIN_TVL_USD,
+        pools: poolIds,
       },
-      { timeout: SUBGRAPH_TIMEOUT },
-    );
+    },
+    { timeout: SUBGRAPH_TIMEOUT },
+  );
 
-    if (res.errors && res.errors.length) {
-      throw new Error(res.errors[0].message);
-    }
-
-    results.push(...(res?.data?.pools ?? []));
+  if (res.errors && res.errors.length) {
+    throw new Error(res.errors[0].message);
   }
 
-  return results;
+  return res?.data?.pools ?? [];
 }
