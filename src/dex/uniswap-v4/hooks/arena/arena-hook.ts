@@ -76,12 +76,16 @@ export class ArenaHook implements IBaseHook {
     delta: BalanceDelta,
     _hookData: string,
   ): bigint {
-    const amountSpecified = BigInt(params.amountSpecified);
-    const isExactInput = amountSpecified < 0n;
-    const unspecifiedDelta =
-      amountSpecified < 0n === params.zeroForOne
-        ? delta.amount1
-        : delta.amount0;
+    const { amountSpecified, zeroForOne } = params;
+
+    const isExactInput = BigInt(amountSpecified) < 0n;
+
+    let unspecifiedDelta: bigint;
+    if (isExactInput === zeroForOne) {
+      unspecifiedDelta = delta.amount1;
+    } else {
+      unspecifiedDelta = delta.amount0;
+    }
 
     if (unspecifiedDelta === 0n) {
       return 0n;
