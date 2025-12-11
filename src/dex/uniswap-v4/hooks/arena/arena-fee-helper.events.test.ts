@@ -62,7 +62,7 @@ describe('AVALANCHE', () => {
         logger,
         undefined,
       );
-      feeHelper.addPoolIds(poolIds);
+      poolIds.forEach(id => feeHelper.addPoolId(id));
     });
 
     Object.entries(eventsToTest).forEach(

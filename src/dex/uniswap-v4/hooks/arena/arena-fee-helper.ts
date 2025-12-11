@@ -44,7 +44,7 @@ export class ArenaFeeHelper extends StatefulEventSubscriber<ArenaFeeHelperState>
 
   private readonly feeHelper: Contract;
 
-  protected poolIds: string[] = [];
+  protected poolIds: Set<string> = new Set();
 
   constructor(
     readonly parentName: string,
@@ -102,8 +102,9 @@ export class ArenaFeeHelper extends StatefulEventSubscriber<ArenaFeeHelperState>
 
     const poolIdToTotalFeePpm: Record<string, bigint> = {};
     const calls: MultiCallParams<bigint>[] = [];
+    const poolIds = Array.from(this.poolIds);
 
-    for (const poolId of this.poolIds) {
+    for (const poolId of poolIds) {
       calls.push({
         target: this.feeHelperAddress,
         callData: this.feeHelper.interface.encodeFunctionData(
@@ -117,7 +118,7 @@ export class ArenaFeeHelper extends StatefulEventSubscriber<ArenaFeeHelperState>
     const data = await this.dexHelper.multiWrapper.tryAggregate(false, calls);
 
     data.forEach((result, index) => {
-      poolIdToTotalFeePpm[this.poolIds[index]] = result.success
+      poolIdToTotalFeePpm[poolIds[index]] = result.success
         ? result.returnData
         : 0n;
     });
@@ -128,17 +129,16 @@ export class ArenaFeeHelper extends StatefulEventSubscriber<ArenaFeeHelperState>
     };
   }
 
-  addPoolIds(poolIds: string[]) {
-    this.poolIds.push(...poolIds);
+  addPoolId(poolId: string) {
+    if (this.poolIds.has(poolId)) return;
+    this.poolIds.add(poolId);
 
     const state = this.getStaleState();
     if (state) {
       const poolIdToTotalFeePpm = { ...state.poolIdToTotalFeePpm };
-      [...poolIds].forEach(poolId => {
-        if (!(poolId in poolIdToTotalFeePpm)) {
-          poolIdToTotalFeePpm[poolId] = 0n;
-        }
-      });
+      if (!(poolId in poolIdToTotalFeePpm)) {
+        poolIdToTotalFeePpm[poolId] = 0n;
+      }
 
       this.setState(
         {

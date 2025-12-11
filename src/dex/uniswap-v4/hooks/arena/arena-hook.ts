@@ -41,7 +41,7 @@ export class ArenaHook implements IBaseHook {
   }
 
   registerPool(poolId: string, _poolKey: PoolKey) {
-    this.arenaFeeHelper.addPoolIds([poolId]);
+    this.arenaFeeHelper.addPoolId(poolId.toLowerCase());
   }
 
   async initialize(blockNumber: number) {
