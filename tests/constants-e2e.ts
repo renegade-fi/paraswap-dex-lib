@@ -935,6 +935,10 @@ export const Tokens: {
       address: '0x2d0e0814e62d80056181f5cd932274405966e4f0',
       decimals: 18,
     },
+    OS: {
+      address: '0xb1e25689d55734fd3fffc939c4c3eb52dff8a794',
+      decimals: 18,
+    },
   },
   [Network.BSC]: {
     POPS: {
@@ -1214,6 +1218,10 @@ export const Tokens: {
     TRYB: {
       address: '0x564a341df6c126f90cf3ecb92120fd7190acb401',
       decimals: 6,
+    },
+    WLBOND: {
+      address: '0xd1cb926c6b917ecceda162a432a4d242e777bdc7',
+      decimals: 18,
     },
   },
   [Network.ARBITRUM]: {
@@ -1821,6 +1829,10 @@ export const Tokens: {
     EURC: {
       address: `0x60a3e35cc302bfa44cb288bc5a4f316fdb1adb42`,
       decimals: 6,
+    },
+    rETH: {
+      address: '0xB6fe221Fe9EeF5aBa221c348bA20A1Bf5e73624c',
+      decimals: 18,
     },
   },
   [Network.PLASMA]: {
