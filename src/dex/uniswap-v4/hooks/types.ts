@@ -106,6 +106,10 @@ export interface IBaseHook {
     hookData: string,
   ): [string, BeforeSwapDelta, number]; // bytes4, BeforeSwapDelta, uint24
 
+  /**
+   * The hook implementing this method should return the final
+   * modified amount exactly as swapExactAmountIn/Out would return
+   */
   afterSwap?(
     sender: string,
     key: PoolKey,
