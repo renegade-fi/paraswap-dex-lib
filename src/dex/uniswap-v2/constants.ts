@@ -49,4 +49,6 @@ export const UniswapV2Alias: { [network: number]: string } = {
   [Network.ARBITRUM]: 'uniswapv2',
   [Network.OPTIMISM]: 'uniswapv2',
   [Network.BASE]: 'uniswapv2',
+  [Network.GNOSIS]: 'uniswapv2',
+  [Network.UNICHAIN]: 'uniswapv2',
 };
