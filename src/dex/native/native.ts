@@ -1,7 +1,7 @@
 import BigNumber from 'bignumber.js';
 import { assert } from 'ts-essentials';
 import { BN_0, BN_1, getBigNumberPow } from '../../bignumber-constants';
-import { CACHE_PREFIX, Network, SwapSide } from '../../constants';
+import { Network, SwapSide } from '../../constants';
 import { IDexHelper } from '../../dex-helper/idex-helper';
 import { IDex } from '../../dex/idex';
 import {
@@ -19,7 +19,6 @@ import {
   Token,
 } from '../../types';
 import { getDexKeysWithNetwork, isETHAddress } from '../../utils';
-import { SimpleExchange } from '../simple-exchange';
 import { RateFetcher } from './rate-fetcher';
 import { NativeConfig } from './config';
 import {
@@ -140,9 +139,13 @@ export class Native
   async getPoolIdentifiers(
     srcToken: Token,
     destToken: Token,
-    _side: SwapSide,
+    side: SwapSide,
     _blockNumber: number,
   ): Promise<string[]> {
+    if (side === SwapSide.BUY) {
+      return [];
+    }
+
     const _srcToken = this.dexHelper.config.wrapETH(srcToken);
     const _destToken = this.dexHelper.config.wrapETH(destToken);
 
@@ -365,7 +368,7 @@ export class Native
   getDexParam(
     _srcToken: Address,
     _destToken: Address,
-    _srcAmount: NumberAsString,
+    srcAmount: NumberAsString,
     _destAmount: NumberAsString,
     _recipient: Address,
     data: NativeData,
@@ -379,10 +382,20 @@ export class Native
 
     const { calldata, target } = this.normalizeTxRequest(txRequest);
 
+    const selector = calldata.slice(0, 10);
+    const body = calldata.slice(10);
+
+    const offset = body.slice(0, 64);
+    const quoteData = body.slice(64 * 2);
+
+    const actualSellerAmount = BigInt(srcAmount).toString(16).padStart(64, '0');
+
+    const exchangeData = selector + offset + actualSellerAmount + quoteData;
+
     return {
       needWrapNative: this.needWrapNative,
       dexFuncHasRecipient: true,
-      exchangeData: calldata,
+      exchangeData,
       targetExchange: target,
       swappedAmountNotPresentInExchangeData: true,
       returnAmountPos: undefined,
