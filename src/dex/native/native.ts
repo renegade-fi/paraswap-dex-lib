@@ -43,6 +43,7 @@ import { uint8ToNumber } from '../../lib/decoders';
 import { MultiResult } from '../../lib/multi-wrapper';
 import { SimpleExchangeWithRestrictions } from '../simple-exchange-with-restrictions';
 import { SlippageCheckError } from '../generic-rfq/types';
+import * as CALLDATA_GAS_COST from '../../calldata-gas-cost';
 
 export class Native
   extends SimpleExchangeWithRestrictions
@@ -219,7 +220,25 @@ export class Native
   }
 
   getCalldataGasCost(_: PoolPrices<NativeData>): number | number[] {
-    return NATIVE_GAS_COST;
+    return (
+      CALLDATA_GAS_COST.DEX_OVERHEAD +
+      CALLDATA_GAS_COST.OFFSET_LARGE +
+      CALLDATA_GAS_COST.AMOUNT + // actualSellerAmount
+      CALLDATA_GAS_COST.AMOUNT + // actualMinOutputAmount
+      CALLDATA_GAS_COST.ADDRESS * 5 + // pool, signer, recipient, sellerToken, buyerToken
+      CALLDATA_GAS_COST.AMOUNT * 3 + // sellerTokenAmount, buyerTokenAmount, amountOutMinimum
+      CALLDATA_GAS_COST.TIMESTAMP + // deadlineTimestamp
+      CALLDATA_GAS_COST.AMOUNT * 5 + // nonce + confidenceT,N,E,M
+      CALLDATA_GAS_COST.UUID + // quoteId
+      CALLDATA_GAS_COST.BOOL + // multiHop
+      CALLDATA_GAS_COST.OFFSET_LARGE * 2 +
+      CALLDATA_GAS_COST.LENGTH_SMALL +
+      CALLDATA_GAS_COST.FULL_WORD * 3 + // signature
+      CALLDATA_GAS_COST.ADDRESS +
+      CALLDATA_GAS_COST.AMOUNT + // widgetFee
+      CALLDATA_GAS_COST.LENGTH_SMALL +
+      CALLDATA_GAS_COST.FULL_WORD * 3 // widgetFeeSignature
+    );
   }
 
   async preProcessTransaction(
