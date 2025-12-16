@@ -103,8 +103,8 @@ export class ArenaHook implements IBaseHook {
 
     const totalFeePpm = this.getTotalFeePpm(toId(key));
 
-    if (totalFeePpm === 0n) {
-      return output;
+    if (totalFeePpm === null || totalFeePpm === 0n) {
+      return 0n;
     }
 
     _require(
@@ -130,14 +130,14 @@ export class ArenaHook implements IBaseHook {
     return netOutput;
   }
 
-  private getTotalFeePpm(poolId: string): bigint {
+  private getTotalFeePpm(poolId: string): bigint | null {
     if (!this.arenaFeeHelper?.isInitialized) {
-      return 0n;
+      return null;
     }
 
     const state = this.arenaFeeHelper.getStaleState();
     if (!state) {
-      return 0n;
+      return null;
     }
 
     const poolFee = state.poolIdToTotalFeePpm[poolId] ?? 0n;
