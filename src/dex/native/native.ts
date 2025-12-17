@@ -369,7 +369,7 @@ export class Native
     _srcToken: Address,
     _destToken: Address,
     srcAmount: NumberAsString,
-    _destAmount: NumberAsString,
+    destAmount: NumberAsString,
     _recipient: Address,
     data: NativeData,
     _side: SwapSide,
@@ -382,15 +382,30 @@ export class Native
 
     const { calldata, target } = this.normalizeTxRequest(txRequest);
 
-    const selector = calldata.slice(0, 10);
-    const body = calldata.slice(10);
+    const selector = calldata.slice(0, 10); // 0x + 4 bytes of function selector
+    const body = calldata.slice(10); // rest of the calldata
 
-    const offset = body.slice(0, 64);
-    const quoteData = body.slice(64 * 2);
+    const offset = body.slice(0, 64); // offset to RFQTQuote struct
+    const quoteData = body.slice(64 * 3); // unchaged RFQTQuote struct
 
-    const actualSellerAmount = BigInt(srcAmount).toString(16).padStart(64, '0');
+    const order = data.quote?.orders?.[0];
 
-    const exchangeData = selector + offset + actualSellerAmount + quoteData;
+    const sellerTokenAmount = order?.sellerTokenAmount ?? '0';
+    const amountOutMinimum = order?.amountOutMinimum ?? '0';
+
+    const actualSellerAmount = BigInt(sellerTokenAmount)
+      .toString(16)
+      .padStart(64, '0');
+    const actualMinOutputAmount = BigInt(amountOutMinimum)
+      .toString(16)
+      .padStart(64, '0');
+
+    const exchangeData =
+      selector +
+      offset +
+      actualSellerAmount +
+      actualMinOutputAmount +
+      quoteData;
 
     return {
       needWrapNative: this.needWrapNative,
@@ -398,7 +413,6 @@ export class Native
       exchangeData,
       targetExchange: target,
       swappedAmountNotPresentInExchangeData: true,
-      returnAmountPos: undefined,
     };
   }
 
