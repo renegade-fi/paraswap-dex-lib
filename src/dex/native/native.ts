@@ -407,12 +407,20 @@ export class Native
       actualMinOutputAmount +
       quoteData;
 
+    const actualSellerAmountIndex = exchangeData
+      .replace('0x', '')
+      .indexOf(actualSellerAmount);
+    const insertFromAmountPos =
+      (actualSellerAmountIndex !== -1
+        ? actualSellerAmountIndex
+        : exchangeData.length) / 2;
+
     return {
       needWrapNative: this.needWrapNative,
       dexFuncHasRecipient: true,
       exchangeData,
       targetExchange: target,
-      swappedAmountNotPresentInExchangeData: true,
+      insertFromAmountPos,
     };
   }
 
