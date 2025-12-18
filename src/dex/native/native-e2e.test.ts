@@ -83,24 +83,24 @@ function runNativeTestsForNetwork({
       );
     };
 
-    // runCase(
-    //   `${nativeTokenSymbol} -> ${tokenASymbol}`,
-    //   nativeTokenSymbol,
-    //   tokenASymbol,
-    //   nativeTokenAmount,
-    // );
-    // runCase(
-    //   `${tokenASymbol} -> ${nativeTokenSymbol}`,
-    //   tokenASymbol,
-    //   nativeTokenSymbol,
-    //   tokenAAmount,
-    // );
-    // runCase(
-    //   `${tokenASymbol} -> ${tokenBSymbol}`,
-    //   tokenASymbol,
-    //   tokenBSymbol,
-    //   tokenAAmount,
-    // );
+    runCase(
+      `${nativeTokenSymbol} -> ${tokenASymbol}`,
+      nativeTokenSymbol,
+      tokenASymbol,
+      nativeTokenAmount,
+    );
+    runCase(
+      `${tokenASymbol} -> ${nativeTokenSymbol}`,
+      tokenASymbol,
+      nativeTokenSymbol,
+      tokenAAmount,
+    );
+    runCase(
+      `${tokenASymbol} -> ${tokenBSymbol}`,
+      tokenASymbol,
+      tokenBSymbol,
+      tokenAAmount,
+    );
     runCase(
       `${tokenBSymbol} -> ${tokenASymbol}`,
       tokenBSymbol,
