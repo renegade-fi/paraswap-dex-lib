@@ -386,26 +386,17 @@ export class Native
     const body = calldata.slice(10); // rest of the calldata
 
     const offset = body.slice(0, 64); // offset to RFQTQuote struct
-    const quoteData = body.slice(64 * 3); // unchaged RFQTQuote struct
+    const quoteData = body.slice(64 * 2); // unchaged actualMinOutputAmount and RFQTQuote struct
 
     const order = data.quote?.orders?.[0];
 
     const sellerTokenAmount = order?.sellerTokenAmount ?? '0';
-    const amountOutMinimum = order?.amountOutMinimum ?? '0';
 
     const actualSellerAmount = BigInt(sellerTokenAmount)
       .toString(16)
       .padStart(64, '0');
-    const actualMinOutputAmount = BigInt(amountOutMinimum)
-      .toString(16)
-      .padStart(64, '0');
 
-    const exchangeData =
-      selector +
-      offset +
-      actualSellerAmount +
-      actualMinOutputAmount +
-      quoteData;
+    const exchangeData = selector + offset + actualSellerAmount + quoteData;
 
     const actualSellerAmountIndex = exchangeData
       .replace('0x', '')

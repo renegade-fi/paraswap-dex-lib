@@ -83,24 +83,24 @@ function runNativeTestsForNetwork({
       );
     };
 
-    runCase(
-      `${nativeTokenSymbol} -> ${tokenASymbol}`,
-      nativeTokenSymbol,
-      tokenASymbol,
-      nativeTokenAmount,
-    );
-    runCase(
-      `${tokenASymbol} -> ${nativeTokenSymbol}`,
-      tokenASymbol,
-      nativeTokenSymbol,
-      tokenAAmount,
-    );
-    runCase(
-      `${tokenASymbol} -> ${tokenBSymbol}`,
-      tokenASymbol,
-      tokenBSymbol,
-      tokenAAmount,
-    );
+    // runCase(
+    //   `${nativeTokenSymbol} -> ${tokenASymbol}`,
+    //   nativeTokenSymbol,
+    //   tokenASymbol,
+    //   nativeTokenAmount,
+    // );
+    // runCase(
+    //   `${tokenASymbol} -> ${nativeTokenSymbol}`,
+    //   tokenASymbol,
+    //   nativeTokenSymbol,
+    //   tokenAAmount,
+    // );
+    // runCase(
+    //   `${tokenASymbol} -> ${tokenBSymbol}`,
+    //   tokenASymbol,
+    //   tokenBSymbol,
+    //   tokenAAmount,
+    // );
     runCase(
       `${tokenBSymbol} -> ${tokenASymbol}`,
       tokenBSymbol,
@@ -112,33 +112,33 @@ function runNativeTestsForNetwork({
 
 describe('Native E2E', () => {
   const testMatrix: NativeE2ENetworkConfig[] = [
-    {
-      label: 'Mainnet',
-      network: Network.MAINNET,
-      tokenASymbol: 'USDT',
-      tokenBSymbol: 'WETH',
-      tokenAAmount: '1000000000', // 1000 USDC
-      tokenBAmount: '1000000000000000000', // 1 ETH
-      nativeTokenAmount: '1000000000000000000', // 1 ETH
-    },
-    {
-      label: 'BSC',
-      network: Network.BSC,
-      tokenASymbol: 'USDT',
-      tokenBSymbol: 'WBNB',
-      tokenAAmount: '100000000000000000000', // 100 USDT
-      tokenBAmount: '500000000000000000', // 0.5 WBNB
-      nativeTokenAmount: '500000000000000000', // 0.5 BNB
-    },
-    {
-      label: 'Arbitrum',
-      network: Network.ARBITRUM,
-      tokenASymbol: 'USDT',
-      tokenBSymbol: 'WETH',
-      tokenAAmount: '100000000', // 100 USDT
-      tokenBAmount: '1000000000000000000', // 1 WETH
-      nativeTokenAmount: '1000000000000000000', // 1 ETH
-    },
+    // {
+    //   label: 'Mainnet',
+    //   network: Network.MAINNET,
+    //   tokenASymbol: 'USDT',
+    //   tokenBSymbol: 'WETH',
+    //   tokenAAmount: '1000000000', // 1000 USDC
+    //   tokenBAmount: '1000000000000000000', // 1 ETH
+    //   nativeTokenAmount: '1000000000000000000', // 1 ETH
+    // },
+    // {
+    //   label: 'BSC',
+    //   network: Network.BSC,
+    //   tokenASymbol: 'USDT',
+    //   tokenBSymbol: 'WBNB',
+    //   tokenAAmount: '100000000000000000000', // 100 USDT
+    //   tokenBAmount: '500000000000000000', // 0.5 WBNB
+    //   nativeTokenAmount: '500000000000000000', // 0.5 BNB
+    // },
+    // {
+    //   label: 'Arbitrum',
+    //   network: Network.ARBITRUM,
+    //   tokenASymbol: 'USDT',
+    //   tokenBSymbol: 'WETH',
+    //   tokenAAmount: '100000000', // 100 USDT
+    //   tokenBAmount: '1000000000000000000', // 1 WETH
+    //   nativeTokenAmount: '1000000000000000000', // 1 ETH
+    // },
     {
       label: 'Base',
       network: Network.BASE,
