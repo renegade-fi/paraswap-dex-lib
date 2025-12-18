@@ -258,7 +258,14 @@ export class DexAdapterService {
   genericRFQDexKeys: Set<string> = new Set();
   uniswapV2Alias: string | null;
 
-  public routeOptimizers: IRouteOptimizer<UnoptimizedRate>[] = [];
+  public routeOptimizers: IRouteOptimizer<UnoptimizedRate>[] = [
+    balancerV1Merge,
+    balancerV2Merge,
+    balancerV3Merge,
+    uniswapMerge,
+    curveV1Merge,
+    uniswapV4Merge,
+  ];
 
   constructor(
     public dexHelper: IDexHelper,
@@ -266,23 +273,6 @@ export class DexAdapterService {
     protected sellAdapters: Adapters = {},
     protected buyAdapters: Adapters = {},
   ) {
-    this.uniswapV2Alias =
-      this.network in UniswapV2Alias
-        ? UniswapV2Alias[this.network].toLowerCase()
-        : null;
-
-    this.routeOptimizers = [
-      balancerV1Merge,
-      balancerV2Merge,
-      balancerV3Merge,
-      curveV1Merge,
-      uniswapV4Merge,
-    ];
-
-    if (this.uniswapV2Alias) {
-      this.routeOptimizers.push(uniswapMerge);
-    }
-
     LegacyDexes.forEach(DexAdapter => {
       DexAdapter.dexKeys.forEach(key => {
         this.dexToKeyMap[key.toLowerCase()] = DexAdapter;
@@ -356,6 +346,11 @@ export class DexAdapterService {
       })
       .filter(x => !!x)
       .map(v => v.toLowerCase());
+
+    this.uniswapV2Alias =
+      this.network in UniswapV2Alias
+        ? UniswapV2Alias[this.network].toLowerCase()
+        : null;
   }
 
   getTxBuilderDexByKey(dexKey: string): IDexTxBuilder<any, any> {
