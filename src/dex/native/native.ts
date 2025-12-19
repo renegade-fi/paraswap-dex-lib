@@ -1,7 +1,7 @@
 import BigNumber from 'bignumber.js';
 import { assert } from 'ts-essentials';
 import { BN_0, BN_1, getBigNumberPow } from '../../bignumber-constants';
-import { CACHE_PREFIX, Network, SwapSide } from '../../constants';
+import { Network, SwapSide } from '../../constants';
 import { IDexHelper } from '../../dex-helper/idex-helper';
 import { IDex } from '../../dex/idex';
 import {
@@ -19,7 +19,6 @@ import {
   Token,
 } from '../../types';
 import { getDexKeysWithNetwork, isETHAddress } from '../../utils';
-import { SimpleExchange } from '../simple-exchange';
 import { RateFetcher } from './rate-fetcher';
 import { NativeConfig } from './config';
 import {
@@ -43,6 +42,7 @@ import { uint8ToNumber } from '../../lib/decoders';
 import { MultiResult } from '../../lib/multi-wrapper';
 import { SimpleExchangeWithRestrictions } from '../simple-exchange-with-restrictions';
 import { SlippageCheckError } from '../generic-rfq/types';
+import * as CALLDATA_GAS_COST from '../../calldata-gas-cost';
 
 export class Native
   extends SimpleExchangeWithRestrictions
@@ -139,9 +139,13 @@ export class Native
   async getPoolIdentifiers(
     srcToken: Token,
     destToken: Token,
-    _side: SwapSide,
+    side: SwapSide,
     _blockNumber: number,
   ): Promise<string[]> {
+    if (side === SwapSide.BUY) {
+      return [];
+    }
+
     const _srcToken = this.dexHelper.config.wrapETH(srcToken);
     const _destToken = this.dexHelper.config.wrapETH(destToken);
 
@@ -219,7 +223,25 @@ export class Native
   }
 
   getCalldataGasCost(_: PoolPrices<NativeData>): number | number[] {
-    return NATIVE_GAS_COST;
+    return (
+      CALLDATA_GAS_COST.DEX_OVERHEAD +
+      CALLDATA_GAS_COST.OFFSET_LARGE +
+      CALLDATA_GAS_COST.AMOUNT + // actualSellerAmount
+      CALLDATA_GAS_COST.AMOUNT + // actualMinOutputAmount
+      CALLDATA_GAS_COST.ADDRESS * 5 + // pool, signer, recipient, sellerToken, buyerToken
+      CALLDATA_GAS_COST.AMOUNT * 3 + // sellerTokenAmount, buyerTokenAmount, amountOutMinimum
+      CALLDATA_GAS_COST.TIMESTAMP + // deadlineTimestamp
+      CALLDATA_GAS_COST.AMOUNT * 5 + // nonce + confidenceT,N,E,M
+      CALLDATA_GAS_COST.UUID + // quoteId
+      CALLDATA_GAS_COST.BOOL + // multiHop
+      CALLDATA_GAS_COST.OFFSET_LARGE * 2 +
+      CALLDATA_GAS_COST.LENGTH_SMALL +
+      CALLDATA_GAS_COST.FULL_WORD * 3 + // signature
+      CALLDATA_GAS_COST.ADDRESS +
+      CALLDATA_GAS_COST.AMOUNT + // widgetFee
+      CALLDATA_GAS_COST.LENGTH_SMALL +
+      CALLDATA_GAS_COST.FULL_WORD * 3 // widgetFeeSignature
+    );
   }
 
   async preProcessTransaction(
@@ -346,8 +368,8 @@ export class Native
   getDexParam(
     _srcToken: Address,
     _destToken: Address,
-    _srcAmount: NumberAsString,
-    _destAmount: NumberAsString,
+    srcAmount: NumberAsString,
+    destAmount: NumberAsString,
     _recipient: Address,
     data: NativeData,
     _side: SwapSide,
@@ -360,13 +382,21 @@ export class Native
 
     const { calldata, target } = this.normalizeTxRequest(txRequest);
 
+    const selector = calldata.slice(0, 10); // 0x + 4 bytes of function selector
+
+    let insertFromAmountPos;
+
+    // function selectof for tradeRFQT
+    if (selector === '0x0947c2d9') {
+      insertFromAmountPos = 36; // position of actualSellerAmount in calldata
+    }
+
     return {
       needWrapNative: this.needWrapNative,
       dexFuncHasRecipient: true,
       exchangeData: calldata,
       targetExchange: target,
-      swappedAmountNotPresentInExchangeData: true,
-      returnAmountPos: undefined,
+      insertFromAmountPos,
     };
   }
 
