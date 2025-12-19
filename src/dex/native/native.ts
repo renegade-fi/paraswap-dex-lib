@@ -383,33 +383,18 @@ export class Native
     const { calldata, target } = this.normalizeTxRequest(txRequest);
 
     const selector = calldata.slice(0, 10); // 0x + 4 bytes of function selector
-    const body = calldata.slice(10); // rest of the calldata
 
-    const offset = body.slice(0, 64); // offset to RFQTQuote struct
-    const quoteData = body.slice(64 * 2); // unchaged actualMinOutputAmount and RFQTQuote struct
+    let insertFromAmountPos;
 
-    const order = data.quote?.orders?.[0];
-
-    const sellerTokenAmount = order?.sellerTokenAmount ?? '0';
-
-    const actualSellerAmount = BigInt(sellerTokenAmount)
-      .toString(16)
-      .padStart(64, '0');
-
-    const exchangeData = selector + offset + actualSellerAmount + quoteData;
-
-    const actualSellerAmountIndex = exchangeData
-      .replace('0x', '')
-      .indexOf(actualSellerAmount);
-    const insertFromAmountPos =
-      (actualSellerAmountIndex !== -1
-        ? actualSellerAmountIndex
-        : exchangeData.length) / 2;
+    // function selectof for tradeRFQT
+    if (selector === '0x0947c2d9') {
+      insertFromAmountPos = 36; // position of actualSellerAmount in calldata
+    }
 
     return {
       needWrapNative: this.needWrapNative,
       dexFuncHasRecipient: true,
-      exchangeData,
+      exchangeData: calldata,
       targetExchange: target,
       insertFromAmountPos,
     };
