@@ -402,9 +402,7 @@ export class Native
 
   async updatePoolState() {
     // load orderbook data once from cache and save locally for future use in getTopPoolsForToken
-    const orderbook = await this.getCachedOrderbook(
-      NATIVE_ORDERBOOK_CACHE_TTL_S,
-    );
+    const orderbook = await this.getCachedOrderbook();
 
     if (!orderbook) return;
 
@@ -458,9 +456,7 @@ export class Native
     tokenAddress: Address,
     limit: number,
   ): Promise<PoolLiquidity[]> {
-    const orderbook = await this.getCachedOrderbook(
-      NATIVE_ORDERBOOK_CACHE_TTL_S,
-    );
+    const orderbook = await this.getCachedOrderbook();
 
     if (!orderbook) return [];
 
@@ -642,14 +638,12 @@ export class Native
     return null;
   }
 
-  private async getCachedOrderbook(
-    ttl?: number,
-  ): Promise<NativeOrderbookEntry[] | null> {
+  private async getCachedOrderbook(): Promise<NativeOrderbookEntry[] | null> {
     const cached = await this.dexHelper.cache.getAndCacheLocally(
       this.dexKey,
       this.network,
       this.orderbookCacheKey,
-      ttl ?? NATIVE_ORDERBOOK_POLLING_INTERVAL_MS / 1000,
+      NATIVE_ORDERBOOK_POLLING_INTERVAL_MS / 1000,
     );
 
     if (!cached) {
