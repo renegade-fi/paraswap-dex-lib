@@ -20,6 +20,17 @@ export type NativeOrderbookEntry = {
 
 export type NativeOrderbookResponse = NativeOrderbookEntry[];
 
+export type NativeBlacklistEntry = {
+  id: string;
+  address: Address;
+  chainId: number;
+  createTime: number;
+};
+
+export type NativeBlacklistResponse = {
+  black_list: NativeBlacklistEntry[];
+};
+
 export type NativeRateFetcherConfig = {
   rateConfig: {
     orderbookReqParams: {
@@ -30,6 +41,12 @@ export type NativeRateFetcherConfig = {
     orderbookCacheKey: string;
     orderbookCacheTTLSecs: number;
     orderbookIntervalMs: number;
+    blacklistReqParams: {
+      url: string;
+      headers?: RequestHeaders;
+    };
+    blacklistIntervalMs: number;
+    setBlacklist: (addresses: string[]) => Promise<void>;
   };
 };
 
