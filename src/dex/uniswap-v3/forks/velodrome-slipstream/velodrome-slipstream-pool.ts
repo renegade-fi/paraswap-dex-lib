@@ -9,8 +9,8 @@ import {
 } from '../../types';
 import { uint24ToBigInt, uint256ToBigInt } from '../../../../lib/decoders';
 import { decodeStateMultiCallResultWithRelativeBitmaps } from './utils';
-import { Address, BlockHeader, Log } from '../../../../types';
-import { assert, DeepReadonly } from 'ts-essentials';
+import { Address } from '../../../../types';
+import { assert } from 'ts-essentials';
 import { _reduceTickBitmap, _reduceTicks } from '../../contract-math/utils';
 import { bigIntify } from '../../../../utils';
 import { TickBitMap } from '../../contract-math/TickBitMap';
