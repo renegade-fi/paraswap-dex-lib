@@ -215,10 +215,8 @@ export class VelodromeSlipstream extends UniswapV3 {
         return;
       }
 
-      const blockNumber = await this.dexHelper.provider.getBlockNumber();
-
       this.logger.info(
-        `${this.dexKey}: Updating fees for ${activePools.length} pools at block ${blockNumber}`,
+        `${this.dexKey}: Updating fees for ${activePools.length} pools`,
       );
 
       const factoryIface = new Interface(VelodromeSlipstreamFactoryABI);
@@ -234,8 +232,9 @@ export class VelodromeSlipstream extends UniswapV3 {
       const results = await this.dexHelper.multiWrapper.tryAggregate<bigint>(
         false,
         callData,
-        blockNumber,
       );
+
+      const updateBlockNumber = await this.dexHelper.provider.getBlockNumber();
 
       activePools.forEach((pool, index) => {
         if (!results[index].success) {
@@ -257,7 +256,7 @@ export class VelodromeSlipstream extends UniswapV3 {
 
         if (currentState.fee !== newFee) {
           const newState = { ...currentState, fee: newFee };
-          pool.setState(newState, blockNumber, 'batch_fee_update');
+          pool.setState(newState, updateBlockNumber);
 
           this.logger.debug(
             `${this.dexKey}: Updated fee for pool ${pool.poolAddress}: ${currentState.fee} -> ${newFee}`,
