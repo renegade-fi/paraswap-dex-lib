@@ -11,6 +11,10 @@ When making fixes based on code review comments or feedback, add a concise descr
 <!-- Add new fixes at the top of this list -->
 <!-- Format: - **[Date] Issue**: Brief description of fix -->
 
+- **[2025-01] Reuse Interface instances**: Move `factoryIface = new Interface(...)` to class property instead of creating in method. Avoids repeated instantiation on each call.
+
+- **[2025-01] PharaohV3 fee updates fix**: Extracted `buildFeeCallData()` method from `updateAllPoolFees()` so PharaohV3 can override it. PharaohV3 uses `pool.fee()` on pool contract, not `factory.getSwapFee()`.
+
 - **[2025-01] VelodromeSlipstream RPC optimization**: Centralized per-pool `factory.getSwapFee()` calls into a single batched interval at DEX level. Used `multiWrapper.tryAggregate()` to batch calls, `setState()` for immutable state updates, master/slave check to prevent duplicate RPC calls, and proper interval cleanup in `releaseResources()`.
 
 - **[2025-01] Avoid analytics logging**: Don't add success/failure count logs (e.g., `Updated ${successCount}/${totalCount} pools`). Log only important operations, warnings for failures, and errors with context. Analytics-style logs create unnecessary noise.

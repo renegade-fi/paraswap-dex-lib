@@ -36,6 +36,9 @@ export class VelodromeSlipstream extends UniswapV3 {
 
   protected feeUpdateIntervalTask?: NodeJS.Timeout;
   private static readonly FEE_REFRESH_INTERVAL_MS = 60 * 1000;
+  protected readonly factoryIface = new Interface(
+    VelodromeSlipstreamFactoryABI,
+  );
 
   constructor(
     protected network: Network,
@@ -204,6 +207,18 @@ export class VelodromeSlipstream extends UniswapV3 {
     };
   }
 
+  protected buildFeeCallData(
+    pools: VelodromeSlipstreamEventPool[],
+  ): MultiCallParams<bigint>[] {
+    return pools.map(pool => ({
+      target: this.config.factory,
+      callData: this.factoryIface.encodeFunctionData('getSwapFee', [
+        pool.poolAddress,
+      ]),
+      decodeFunction: uint24ToBigInt,
+    }));
+  }
+
   protected async updateAllPoolFees(): Promise<void> {
     try {
       const activePools = Object.values(this.eventPools).filter(
@@ -219,15 +234,7 @@ export class VelodromeSlipstream extends UniswapV3 {
         `${this.dexKey}: Updating fees for ${activePools.length} pools`,
       );
 
-      const factoryIface = new Interface(VelodromeSlipstreamFactoryABI);
-
-      const callData: MultiCallParams<bigint>[] = activePools.map(pool => ({
-        target: this.config.factory,
-        callData: factoryIface.encodeFunctionData('getSwapFee', [
-          pool.poolAddress,
-        ]),
-        decodeFunction: uint24ToBigInt,
-      }));
+      const callData = this.buildFeeCallData(activePools);
 
       const results = await this.dexHelper.multiWrapper.tryAggregate<bigint>(
         false,
