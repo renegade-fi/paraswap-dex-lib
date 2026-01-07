@@ -16,6 +16,9 @@ import { PoolState } from '../../types';
 import { VelodromeSlipstreamEventPool } from './velodrome-slipstream-pool';
 import { UniswapV3EventPool } from '../../uniswap-v3-pool';
 import { OnPoolCreatedCallback } from '../../uniswap-v3-factory';
+import { MultiCallParams } from '../../../../lib/multi-wrapper';
+import { uint24ToBigInt } from '../../../../lib/decoders';
+import VelodromeSlipstreamFactoryABI from '../../../../abi/velodrome-slipstream/VelodromeSlipstreamFactory.abi.json';
 
 type VelodromeSlipstreamData = {
   path: {
@@ -30,6 +33,12 @@ type VelodromeSlipstreamData = {
 
 export class VelodromeSlipstream extends UniswapV3 {
   readonly eventPools: Record<string, VelodromeSlipstreamEventPool | null> = {};
+
+  // Fee update interval task
+  protected feeUpdateIntervalTask?: NodeJS.Timeout;
+
+  // Constant for fee refresh interval
+  private static readonly FEE_REFRESH_INTERVAL_MS = 60 * 1000; // 1 minute
 
   constructor(
     protected network: Network,
@@ -81,6 +90,14 @@ export class VelodromeSlipstream extends UniswapV3 {
       this.intervalTask = setInterval(
         cleanExpiredNotExistingPoolsKeys.bind(this),
         UNISWAPV3_CLEAN_NOT_EXISTING_POOL_INTERVAL_MS,
+      );
+
+      // Add fee update interval task
+      void this.updateAllPoolFees(); // Run immediately
+
+      this.feeUpdateIntervalTask = setInterval(
+        this.updateAllPoolFees.bind(this),
+        VelodromeSlipstream.FEE_REFRESH_INTERVAL_MS,
       );
     }
   }
@@ -189,6 +206,90 @@ export class VelodromeSlipstream extends UniswapV3 {
         },
       ],
     };
+  }
+
+  protected async updateAllPoolFees(): Promise<void> {
+    try {
+      // Get all active pools (non-null)
+      const activePools = Object.values(this.eventPools).filter(
+        pool => pool !== null,
+      ) as VelodromeSlipstreamEventPool[];
+
+      if (activePools.length === 0) {
+        this.logger.debug(`${this.dexKey}: No active pools to update fees for`);
+        return;
+      }
+
+      // Get current block number for state update
+      const blockNumber = await this.dexHelper.provider.getBlockNumber();
+
+      this.logger.info(
+        `${this.dexKey}: Updating fees for ${activePools.length} pools at block ${blockNumber}`,
+      );
+
+      // Prepare multicall batch for all pools
+      const factoryIface = new Interface(VelodromeSlipstreamFactoryABI);
+
+      const callData: MultiCallParams<bigint>[] = activePools.map(pool => ({
+        target: this.config.factory,
+        callData: factoryIface.encodeFunctionData('getSwapFee', [
+          pool.poolAddress,
+        ]),
+        decodeFunction: uint24ToBigInt,
+      }));
+
+      // Execute single batched multicall for all pools
+      const results = await this.dexHelper.multiWrapper.tryAggregate<bigint>(
+        false, // Don't throw on individual failures
+        callData,
+        blockNumber,
+      );
+
+      // Update each pool's state with new fee
+      activePools.forEach((pool, index) => {
+        if (!results[index].success) {
+          this.logger.warn(
+            `${this.dexKey}: Failed to fetch fee for pool ${pool.poolAddress}`,
+          );
+          return;
+        }
+
+        const newFee = results[index].returnData;
+
+        // Get current state
+        const currentState = pool.getStaleState();
+        if (!currentState) {
+          this.logger.debug(
+            `${this.dexKey}: No state available for pool ${pool.poolAddress}, skipping fee update`,
+          );
+          return;
+        }
+
+        // Only update if fee changed
+        if (currentState.fee !== newFee) {
+          // Create new state with updated fee
+          const newState = { ...currentState, fee: newFee };
+
+          // Update pool state
+          pool.setState(newState, blockNumber, 'batch_fee_update');
+
+          this.logger.debug(
+            `${this.dexKey}: Updated fee for pool ${pool.poolAddress}: ${currentState.fee} -> ${newFee}`,
+          );
+        }
+      });
+    } catch (error) {
+      this.logger.error(`${this.dexKey}: Error updating pool fees:`, error);
+    }
+  }
+
+  releaseResources() {
+    super.releaseResources();
+
+    if (this.feeUpdateIntervalTask !== undefined) {
+      clearInterval(this.feeUpdateIntervalTask);
+      this.feeUpdateIntervalTask = undefined;
+    }
   }
 
   /*
