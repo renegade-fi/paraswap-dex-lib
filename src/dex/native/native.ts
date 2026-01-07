@@ -31,6 +31,7 @@ import {
 } from './types';
 import {
   NATIVE_API_URL,
+  NATIVE_BLACKLIST_POLLING_INTERVAL_MS,
   NATIVE_FIRM_QUOTE_EXPIRY_S,
   NATIVE_FIRM_QUOTE_VERSION,
   NATIVE_GAS_COST,
@@ -41,7 +42,7 @@ import { BytesLike, formatUnits, parseUnits } from 'ethers/lib/utils';
 import { uint8ToNumber } from '../../lib/decoders';
 import { MultiResult } from '../../lib/multi-wrapper';
 import { SimpleExchangeWithRestrictions } from '../simple-exchange-with-restrictions';
-import { SlippageCheckError } from '../generic-rfq/types';
+import { BlacklistError, SlippageCheckError } from '../generic-rfq/types';
 import * as CALLDATA_GAS_COST from '../../calldata-gas-cost';
 
 export class Native
@@ -109,6 +110,14 @@ export class Native
         orderbookCacheKey: this.orderbookCacheKey,
         orderbookCacheTTLSecs: NATIVE_ORDERBOOK_CACHE_TTL_S,
         orderbookIntervalMs: NATIVE_ORDERBOOK_POLLING_INTERVAL_MS,
+        blacklistReqParams: {
+          url: `${NATIVE_API_URL}/blacklist`,
+          headers: {
+            apikey: this.nativeApiKey,
+          },
+        },
+        blacklistIntervalMs: NATIVE_BLACKLIST_POLLING_INTERVAL_MS,
+        setBlacklist: this.setBlacklist.bind(this),
       },
     };
 
@@ -251,6 +260,23 @@ export class Native
     side: SwapSide,
     options: PreprocessTransactionOptions,
   ): Promise<[OptimalSwapExchange<NativeData>, ExchangeTxInfo]> {
+    if (await this.isBlacklisted(options.txOrigin)) {
+      this.logger.warn(
+        `${this.dexKey}-${this.network}: blacklisted TX Origin address '${options.txOrigin}' trying to build a transaction. Bailing...`,
+      );
+      throw new BlacklistError(this.dexKey, this.network, options.txOrigin);
+    }
+
+    if (
+      options.userAddress !== options.txOrigin &&
+      (await this.isBlacklisted(options.userAddress))
+    ) {
+      this.logger.warn(
+        `${this.dexKey}-${this.network}: blacklisted user address '${options.userAddress}' trying to build a transaction. Bailing...`,
+      );
+      throw new BlacklistError(this.dexKey, this.network, options.userAddress);
+    }
+
     // Native DEX only supports SELL side for now
     if (side === SwapSide.BUY) {
       throw new Error(`${this.dexKey}-${this.network}: BUY not supported`);
