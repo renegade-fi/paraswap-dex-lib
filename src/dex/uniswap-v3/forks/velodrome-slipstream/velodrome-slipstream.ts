@@ -88,7 +88,7 @@ export class VelodromeSlipstream extends UniswapV3 {
         cleanExpiredNotExistingPoolsKeys.bind(this),
         UNISWAPV3_CLEAN_NOT_EXISTING_POOL_INTERVAL_MS,
       );
-
+    } else {
       void this.updateAllPoolFees();
 
       this.feeUpdateIntervalTask = setInterval(
@@ -211,7 +211,7 @@ export class VelodromeSlipstream extends UniswapV3 {
       ) as VelodromeSlipstreamEventPool[];
 
       if (activePools.length === 0) {
-        this.logger.debug(`${this.dexKey}: No active pools to update fees for`);
+        this.logger.warn(`${this.dexKey}: No active pools to update fees for`);
         return;
       }
 
