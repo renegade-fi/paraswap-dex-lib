@@ -2,6 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Documenting Fixes
+
+When making fixes based on code review comments or feedback, add a concise description of the fix to this section. This creates a knowledge base of common issues and their solutions.
+
+### Fix Log
+
+<!-- Add new fixes at the top of this list -->
+<!-- Format: - **[Date] Issue**: Brief description of fix -->
+
+- **[2025-01] VelodromeSlipstream RPC optimization**: Centralized per-pool `factory.getSwapFee()` calls into a single batched interval at DEX level. Used `multiWrapper.tryAggregate()` to batch calls, `setState()` for immutable state updates, master/slave check to prevent duplicate RPC calls, and proper interval cleanup in `releaseResources()`.
+
+- **[2025-01] Avoid analytics logging**: Don't add success/failure count logs (e.g., `Updated ${successCount}/${totalCount} pools`). Log only important operations, warnings for failures, and errors with context. Analytics-style logs create unnecessary noise.
+
 ## Repository Overview
 
 **ParaSwap DexLib** is a library used by ParaSwap backend to integrate with 90+ decentralized exchanges. It enables DEX developers to integrate their protocols by creating pull requests to this repository.
@@ -40,14 +53,6 @@ yarn test <path-to-test-file>
 # Examples:
 yarn test src/dex/uniswap-v3/uniswap-v3-integration.test.ts
 yarn test src/dex/curve-v1/curve-v1-events.test.ts
-```
-
-**E2E Tests Requirements**: E2E tests use Tenderly fork API. Create a `.env` file with:
-
-```bash
-TENDERLY_TOKEN=<your-token>          # From Account>Settings>Authorization
-TENDERLY_ACCOUNT_ID=<your-account>   # Your Tenderly account name
-TENDERLY_PROJECT=<your-project>      # Tenderly project name
 ```
 
 ### DEX Integration
@@ -92,12 +97,6 @@ Each DEX implements the `IDex` interface with three main responsibilities:
 
 **Transaction Building (`IDexTxBuilder<ExchangeData>`)**:
 
-_V5 Methods (Legacy Augustus)_:
-
-- `getAdapterParam()`: Encode parameters for adapter-based routing
-- `getSimpleParam()`: Encode for simpleSwap direct calls
-- `getDirectParam()`: Encode for direct contract calls
-
 _V6 Methods (Augustus V6)_:
 
 - `getDexParam()`: Generic parameter encoding with context awareness
@@ -141,29 +140,12 @@ Each DEX requires three types of tests:
 1. **Integration Tests** (`*-integration.test.ts`): Validates `getPoolIdentifiers()`, `getPricesVolume()`, gas estimates
 2. **Events Unit Tests** (`*-events.test.ts`): Tests event processing and state management
 3. **E2E Tests** (`*-e2e.test.ts`): Full swap simulation with Tenderly fork, tests transaction building and execution
+   **Executors** are smart contracts that atomically:
 
-### Transaction Building Pipeline
-
-```
-OptimalRate (from routing)
-    ↓
-PreprocessTransaction (optional async prep)
-    ↓
-getDexParam() or getAdapterParam()
-    ↓
-GenericSwapTransactionBuilder / TransactionBuilder
-    ↓
-ExecutorBytecodeBuilder (V6 - detects executor contract)
-    ↓
-TxObject (encoded transaction)
-```
-
-**Executors** are smart contracts that atomically:
-
-1. Receive tokens from user
-2. Execute DEX swaps
-3. Return output tokens
-4. Handle approvals and WETH wrapping/unwrapping
+4. Receive tokens from user
+5. Execute DEX swaps
+6. Return output tokens
+7. Handle approvals and WETH wrapping/unwrapping
 
 Three executor versions exist (`Executor01`, `Executor02`, `Executor03`), with automatic detection.
 
@@ -257,109 +239,3 @@ Reference these for different patterns:
 - **UniswapV2** (`src/dex/uniswap-v2/`): Simple AMM, many forks
 - **Solidly** (`src/dex/solidly/`): ve(3,3) model with volatile/stable pools
 - **VelodromeSlipstream** (`src/dex/uniswap-v3/forks/velodrome-slipstream/`): Optimized centralized fee fetching pattern
-
-## RPC Optimization Patterns
-
-### Problem Identification
-
-When optimizing RPC usage, look for these patterns:
-
-1. **Per-Pool RPC Calls on Every Block**: Methods called from `processBlockLogs()` that make RPC calls
-2. **Rarely Changing Data**: Values that change infrequently (governance parameters, fees, protocol settings)
-3. **Multiple Instances**: Many pools making the same type of call independently
-4. **No Event Subscriptions**: Data fetched via polling instead of event-based updates
-
-**Example**: VelodromeSlipstream pools called `factory.getSwapFee()` on every block with activity, resulting in 720,000 RPC calls/day for 100 pools.
-
-### Key Principles
-
-1. **Batch Everything**: Use `multiWrapper.tryAggregate()` to batch multiple calls into one RPC request
-2. **Centralize at DEX Level**: Data needed by multiple pools should be fetched at the DEX level
-3. **Use State Management**: Leverage `StatefulEventSubscriber.setState()` for updates instead of creating new cache layers
-4. **Master/Slave Awareness**: Only master instances should make RPC calls (check `!this.dexHelper.config.isSlave`)
-5. **Proper Cleanup**: Always clear intervals in `releaseResources()`
-6. **Error Handling**: Use `tryAggregate(false, ...)` to allow individual call failures without breaking the batch
-
-### State Management Insights
-
-**Key Methods**:
-
-- `pool.getState(blockNumber)`: Returns state only if valid and not stale
-- `pool.getStaleState()`: Returns state even if slightly stale (useful for updates)
-- `pool.setState(newState, blockNumber, reason)`: Updates pool state immutably
-
-**Immutability Pattern**:
-
-```typescript
-// WRONG: Direct mutation
-state.fee = newFee; // ❌ State is DeepReadonly
-
-// CORRECT: Create new object
-const newState = { ...currentState, fee: newFee }; // ✅
-pool.setState(newState, blockNumber, 'update_reason');
-```
-
-### Tools and Utilities
-
-**MultiWrapper** (`dexHelper.multiWrapper`):
-
-```typescript
-// Batch multiple calls with automatic chunking
-const results = await dexHelper.multiWrapper.tryAggregate<bigint>(
-  false, // Don't throw on individual failures
-  callData, // Array of MultiCallParams
-  blockNumber, // Optional block number
-);
-
-// Results: Array of { success: boolean, returnData: T }
-results.forEach((result, index) => {
-  if (result.success) {
-    const value = result.returnData;
-    // Use value...
-  }
-});
-```
-
-**Decoders** (`src/lib/decoders.ts`):
-
-- `uint24ToBigInt`: Decode uint24 to bigint
-- `uint256ToBigInt`: Decode uint256 to bigint
-- Custom decoders for complex return types
-
-### Logging Best Practices
-
-```typescript
-// DO: Log important operations
-this.logger.info(
-  `${this.dexKey}: Updating fees for ${activePools.length} pools`,
-);
-
-// DO: Log warnings for failures
-this.logger.warn(
-  `${this.dexKey}: Failed to fetch fee for pool ${pool.poolAddress}`,
-);
-
-// DO: Log errors with context
-this.logger.error(`${this.dexKey}: Error updating pool fees:`, error);
-
-// DON'T: Log success/failure analytics unless specifically needed
-// this.logger.info(`Updated ${successCount}/${totalCount} pools`); // ❌ Unnecessary noise
-```
-
-### Testing Considerations
-
-After implementing optimization:
-
-1. Verify only 1 RPC call made per interval (check logs/monitoring)
-2. Confirm pool states contain updated values after batch run
-3. Test fallback behavior (what happens if batch call fails?)
-4. Verify interval cleanup on `releaseResources()`
-5. Test master/slave separation (slaves shouldn't make RPC calls)
-
-### Related Patterns in Codebase
-
-Similar optimization patterns exist in:
-
-- `src/dex/balancer-v2/balancer-v2.ts`: Block-based caching (lines 796-820)
-- `src/dex/gmx/pool.ts`: TTL-based caching with error handling
-- Other DEXes with `updatePoolState()` methods for batch operations
