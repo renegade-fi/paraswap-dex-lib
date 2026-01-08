@@ -36,6 +36,7 @@ import {
 import { InfusionConfig } from './config';
 import { applyTransferFee } from '../../lib/token-transfer-fee';
 import { isStablePair } from './utils/isStablePair';
+import { addressDecode } from '../../lib/decoders';
 
 export enum InfusionRouterFunctions {
   sellExactEth = 'swapExactETHForTokens',
@@ -124,42 +125,59 @@ export class Infusion extends UniswapV2 {
       InfusionConfig[dexKey][network].feeFactor || this.feeFactor;
   }
 
-  async findInfusionPair(from: Token, to: Token, stable: boolean) {
-    if (from.address.toLowerCase() === to.address.toLowerCase()) return null;
+  async findInfusionPairs(from: Token, to: Token): Promise<InfusionPair[]> {
     const [token0, token1] =
       from.address.toLowerCase() < to.address.toLowerCase()
         ? [from, to]
         : [to, from];
 
-    const typePostfix = this.poolPostfix(stable);
-    const key = `${token0.address.toLowerCase()}-${token1.address.toLowerCase()}-${typePostfix}`;
-    let pair = this.pairs[key];
-    if (pair) return pair;
+    const pairKeyBase = `${token0.address.toLowerCase()}-${token1.address.toLowerCase()}`;
+    const stableValues = [false, true];
+    const pairKeys = stableValues.map(
+      stable => `${pairKeyBase}-${this.poolPostfix(stable)}`,
+    );
 
-    let exchange = await this.factory.methods
-      // Infusion has additional boolean parameter "StablePool"
-      // At first we look for uniswap-like volatile pool
-      .getPair(token0.address, token1.address, stable)
-      .call();
+    // get cached pairs
+    const pairs = pairKeys.map(key => this.pairs[key]);
 
-    if (exchange === NULL_ADDRESS) {
-      pair = { token0, token1, stable };
-    } else {
-      pair = { token0, token1, exchange, stable };
-    }
-    this.pairs[key] = pair;
-    return pair;
+    if (pairs.every(Boolean)) return pairs;
+
+    const calldata = stableValues.map(stable => {
+      return {
+        target: this.factoryAddress,
+        callData: this.factory.methods
+          .getPair(token0.address, token1.address, stable)
+          .encodeABI(),
+      };
+    });
+
+    const data: { returnData: any[] } =
+      await this.dexHelper.multiContract.methods.aggregate(calldata).call({});
+
+    const exchanges = data.returnData.map(addressDecode);
+
+    // cache and return
+    stableValues.forEach((stable, i) => {
+      const exchange = exchanges[i];
+
+      if (exchange === NULL_ADDRESS) {
+        pairs[i] = { token0, token1, stable };
+      } else {
+        pairs[i] = { token0, token1, exchange, stable };
+      }
+
+      this.pairs[pairKeys[i]] = pairs[i];
+    });
+
+    return pairs;
   }
 
   async batchCatchUpPairs(pairs: [Token, Token][], blockNumber: number) {
     if (!blockNumber) return;
     const pairsToFetch: InfusionPair[] = [];
     for (const _pair of pairs) {
-      const pairs = await Promise.all([
-        this.findInfusionPair(_pair[0], _pair[1], true),
-        this.findInfusionPair(_pair[0], _pair[1], false),
-      ]);
-      for (const pair of pairs) {
+      const infusionPairs = await this.findInfusionPairs(_pair[0], _pair[1]);
+      for (const pair of infusionPairs) {
         if (!(pair && pair.exchange)) continue;
         if (!pair.pool) {
           pairsToFetch.push(pair);
@@ -296,7 +314,18 @@ export class Infusion extends UniswapV2 {
 
       await this.batchCatchUpPairs([[from, to]], blockNumber);
 
-      const resultPromises = [false, true].map(async stable => {
+      const pairParams = await this.getInfusionPairOrderedParams(
+        from,
+        to,
+        blockNumber,
+        transferFees.srcDexFee,
+      );
+
+      const resultPools = pairParams.map(pairParam => {
+        if (!pairParam) return null;
+
+        const stable = pairParam.stable;
+
         // We don't support fee on transfer for stable pools yet
         if (
           stable &&
@@ -312,15 +341,6 @@ export class Infusion extends UniswapV2 {
           return null;
 
         const isSell = side === SwapSide.SELL;
-        const pairParam = await this.getInfusionPairOrderedParams(
-          from,
-          to,
-          blockNumber,
-          stable,
-          transferFees.srcDexFee,
-        );
-
-        if (!pairParam) return null;
 
         const unitAmount = getBigIntPow(from.decimals);
 
@@ -331,14 +351,10 @@ export class Infusion extends UniswapV2 {
           isSell ? SRC_TOKEN_PARASWAP_TRANSFERS : DEST_TOKEN_PARASWAP_TRANSFERS,
         );
 
-        const unit = await this.getSellPricePath(unitVolumeWithFee, [
-          pairParam,
-        ]);
+        const unit = this.getSellPricePath(unitVolumeWithFee, [pairParam]);
 
-        const prices = await Promise.all(
-          amountsWithFee.map(amount =>
-            amount === 0n ? 0n : this.getSellPricePath(amount, [pairParam]),
-          ),
+        const prices = amountsWithFee.map(amount =>
+          amount === 0n ? 0n : this.getSellPricePath(amount, [pairParam]),
         );
 
         const [unitOutWithFee, ...outputsWithFee] = applyTransferFee(
@@ -376,9 +392,6 @@ export class Infusion extends UniswapV2 {
         };
       });
 
-      const resultPools = (await Promise.all(
-        resultPromises,
-      )) as ExchangePrices<InfusionData>;
       const resultPoolsFiltered = resultPools.filter(item => !!item); // filter null elements
       return resultPoolsFiltered.length > 0 ? resultPoolsFiltered : null;
     } catch (e) {
@@ -477,51 +490,53 @@ export class Infusion extends UniswapV2 {
     from: Token,
     to: Token,
     blockNumber: number,
-    stable: boolean,
     tokenDexTransferFee: number,
-  ): Promise<InfusionPoolOrderedParams | null> {
-    const pair = await this.findInfusionPair(from, to, stable);
-    if (!(pair && pair.pool && pair.exchange)) return null;
-    const pairState = pair?.pool.getState(blockNumber);
+  ): Promise<Array<InfusionPoolOrderedParams | null>> {
+    const pairs = await this.findInfusionPairs(from, to);
 
-    if (!pairState) {
-      this.logger.error(
-        `Error_orderPairParams expected reserves, got none (maybe the pool doesn't exist) ${
-          from.symbol || from.address
-        } ${to.symbol || to.address}`,
-      );
-      return null;
-    }
+    return pairs.map(pair => {
+      if (!(pair && pair.pool && pair.exchange)) return null;
+      const pairState = pair.pool.getState(blockNumber);
 
-    const fee = (pairState.feeCode + tokenDexTransferFee).toString();
-    const pairReversed =
-      pair.token1.address.toLowerCase() === from.address.toLowerCase();
-    if (pairReversed) {
+      if (!pairState) {
+        this.logger.error(
+          `Error_orderPairParams expected reserves, got none (maybe the pool doesn't exist) ${
+            from.symbol || from.address
+          } ${to.symbol || to.address}`,
+        );
+        return null;
+      }
+
+      const fee = (pairState.feeCode + tokenDexTransferFee).toString();
+      const pairReversed =
+        pair.token1.address.toLowerCase() === from.address.toLowerCase();
+      if (pairReversed) {
+        return {
+          tokenIn: from.address,
+          tokenOut: to.address,
+          reservesIn: pairState.reserves1,
+          reservesOut: pairState.reserves0,
+          fee,
+          direction: false,
+          exchange: pair.exchange,
+          decimalsIn: from.decimals,
+          decimalsOut: to.decimals,
+          stable: pair.stable,
+        };
+      }
       return {
         tokenIn: from.address,
         tokenOut: to.address,
-        reservesIn: pairState.reserves1,
-        reservesOut: pairState.reserves0,
+        reservesIn: pairState.reserves0,
+        reservesOut: pairState.reserves1,
         fee,
-        direction: false,
+        direction: true,
         exchange: pair.exchange,
         decimalsIn: from.decimals,
         decimalsOut: to.decimals,
-        stable,
+        stable: pair.stable,
       };
-    }
-    return {
-      tokenIn: from.address,
-      tokenOut: to.address,
-      reservesIn: pairState.reserves0,
-      reservesOut: pairState.reserves1,
-      fee,
-      direction: true,
-      exchange: pair.exchange,
-      decimalsIn: from.decimals,
-      decimalsOut: to.decimals,
-      stable,
-    };
+    });
   }
 
   async getPoolIdentifiers(
