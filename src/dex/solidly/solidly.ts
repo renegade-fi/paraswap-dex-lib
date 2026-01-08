@@ -62,6 +62,7 @@ export class Solidly extends UniswapV2 {
   pairs: { [key: string]: SolidlyPair } = {};
   stableFee?: number;
   volatileFee?: number;
+  getPairMethodName: string;
 
   readonly isFeeOnTransferSupported: boolean = true;
   readonly SRC_TOKEN_DEX_TRANSFERS = 1;
@@ -124,9 +125,11 @@ export class Solidly extends UniswapV2 {
 
     this.stableFee = SolidlyConfig[dexKey][network].stableFee;
     this.volatileFee = SolidlyConfig[dexKey][network].volatileFee;
+    this.getPairMethodName =
+      SolidlyConfig[dexKey][network].getPairMethodName ?? 'getPair';
 
     this.factory = new dexHelper.web3Provider.eth.Contract(
-      solidlyFactoryABI as any,
+      SolidlyConfig[dexKey][network].factoryAbi ?? (solidlyFactoryABI as any),
       factoryAddress !== undefined
         ? factoryAddress
         : SolidlyConfig[dexKey][network].factoryAddress,
@@ -147,7 +150,7 @@ export class Solidly extends UniswapV2 {
         : [to, from];
 
     const pairKeyBase = `${token0.address.toLowerCase()}-${token1.address.toLowerCase()}`;
-    const stableValues = [true, false];
+    const stableValues = [false, true];
     const pairKeys = stableValues.map(
       stable => `${pairKeyBase}-${this.poolPostfix(stable)}`,
     );
@@ -160,9 +163,11 @@ export class Solidly extends UniswapV2 {
     const calldata = stableValues.map(stable => {
       return {
         target: this.factoryAddress,
-        callData: this.factory.methods
-          .getPair(token0.address, token1.address, stable)
-          .encodeABI(),
+        callData: this.factory.methods[this.getPairMethodName](
+          token0.address,
+          token1.address,
+          stable,
+        ).encodeABI(),
       };
     });
 
@@ -348,7 +353,10 @@ export class Solidly extends UniswapV2 {
         transferFees.srcDexFee,
       );
 
-      const resultPromises = [true, false].map(async (stable, i) => {
+      const resultPromises = pairsParams.map(async pairParam => {
+        if (!pairParam) return null;
+        const stable = pairParam.stable;
+
         // We don't support fee on transfer for stable pools yet
         if (
           stable &&
@@ -364,9 +372,6 @@ export class Solidly extends UniswapV2 {
           return null;
 
         const isSell = side === SwapSide.SELL;
-        const pairParam = pairsParams[i];
-
-        if (!pairParam) return null;
 
         const unitAmount = getBigIntPow(
           // @ts-expect-error Buy side is not implemented yet
@@ -686,7 +691,7 @@ export class Solidly extends UniswapV2 {
     if (side === SwapSide.BUY) throw new Error(`Buy not supported`);
     let exchangeDataTypes = ['bytes4', 'bytes32'];
 
-    const isStable = data.pools.some(pool => !!pool.stable);
+    const isStable = data.pools.some(pool => pool.stable);
     const isStablePoolAndPoolCount = isStable
       ? BigNumber.from(1)
           .shl(255)

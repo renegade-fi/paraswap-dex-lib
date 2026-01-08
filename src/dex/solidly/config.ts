@@ -1,6 +1,8 @@
+import { AbiItem } from 'web3-utils';
 import { DexParams } from './types';
 import { DexConfigMap, AdapterMappings } from '../../types';
 import { Network, SwapSide } from '../../constants';
+import AerodromeFactoryABI from '../../abi/aerodrome/aerodrome-pool-factory.json';
 
 export const SolidlyConfig: DexConfigMap<DexParams> = {
   SolidlyV2: {
@@ -64,6 +66,8 @@ export const SolidlyConfig: DexConfigMap<DexParams> = {
         '0x1a8f01f7eab324003d9388f229ea17991eee9c9d14586f429799f3656790eba0',
       poolGasCost: 180 * 1000,
       feeCode: 0,
+      factoryAbi: AerodromeFactoryABI as AbiItem[],
+      getPairMethodName: 'getPool',
     },
   },
   Thena: {
