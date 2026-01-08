@@ -288,10 +288,10 @@ export class Solidly extends UniswapV2 {
     }
   }
 
-  async getSellPrice(
+  getSellPrice(
     priceParams: SolidlyPoolOrderedParams,
     srcAmount: bigint,
-  ): Promise<bigint> {
+  ): bigint {
     return priceParams.stable
       ? SolidlyStablePool.getSellPrice(priceParams, srcAmount, this.feeFactor)
       : Uniswapv2ConstantProductPool.getSellPrice(
@@ -301,10 +301,10 @@ export class Solidly extends UniswapV2 {
         );
   }
 
-  async getBuyPrice(
+  getBuyPrice(
     priceParams: SolidlyPoolOrderedParams,
     srcAmount: bigint,
-  ): Promise<bigint> {
+  ): bigint {
     if (priceParams.stable) throw new Error(`Buy not supported`);
     return Uniswapv2ConstantProductPool.getBuyPrice(
       priceParams,
@@ -353,7 +353,7 @@ export class Solidly extends UniswapV2 {
         transferFees.srcDexFee,
       );
 
-      const resultPromises = pairsParams.map(async pairParam => {
+      const resultPools = pairsParams.map(pairParam => {
         if (!pairParam) return null;
         const stable = pairParam.stable;
 
@@ -388,25 +388,17 @@ export class Solidly extends UniswapV2 {
         const unit =
           // @ts-expect-error Buy side is not implemented yet
           side === SwapSide.BUY
-            ? await this.getBuyPricePath(unitVolumeWithFee, [pairParam])
-            : await this.getSellPricePath(unitVolumeWithFee, [pairParam]);
+            ? this.getBuyPricePath(unitVolumeWithFee, [pairParam])
+            : this.getSellPricePath(unitVolumeWithFee, [pairParam]);
 
         const prices =
           // @ts-expect-error Buy side is not implemented yet
           side === SwapSide.BUY
-            ? await Promise.all(
-                amountsWithFee.map(amount =>
-                  amount === 0n
-                    ? 0n
-                    : this.getBuyPricePath(amount, [pairParam]),
-                ),
+            ? amountsWithFee.map(amount =>
+                amount === 0n ? 0n : this.getBuyPricePath(amount, [pairParam]),
               )
-            : await Promise.all(
-                amountsWithFee.map(amount =>
-                  amount === 0n
-                    ? 0n
-                    : this.getSellPricePath(amount, [pairParam]),
-                ),
+            : amountsWithFee.map(amount =>
+                amount === 0n ? 0n : this.getSellPricePath(amount, [pairParam]),
               );
 
         const [unitOutWithFee, ...outputsWithFee] = applyTransferFee(
@@ -445,9 +437,6 @@ export class Solidly extends UniswapV2 {
         };
       });
 
-      const resultPools = (await Promise.all(
-        resultPromises,
-      )) as ExchangePrices<UniswapV2Data>;
       const resultPoolsFiltered = resultPools.filter(item => !!item); // filter null elements
       return resultPoolsFiltered.length > 0 ? resultPoolsFiltered : null;
     } catch (e) {

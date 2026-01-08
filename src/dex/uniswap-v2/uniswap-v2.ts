@@ -334,10 +334,10 @@ export class UniswapV2
     });
   }
 
-  async getBuyPrice(
+  getBuyPrice(
     priceParams: UniswapV2PoolOrderedParams,
     destAmount: bigint,
-  ): Promise<bigint> {
+  ): bigint {
     return Uniswapv2ConstantProductPool.getBuyPrice(
       priceParams,
       destAmount,
@@ -345,10 +345,10 @@ export class UniswapV2
     );
   }
 
-  async getSellPrice(
+  getSellPrice(
     priceParams: UniswapV2PoolOrderedParams,
     srcAmount: bigint,
-  ): Promise<bigint> {
+  ): bigint {
     return Uniswapv2ConstantProductPool.getSellPrice(
       priceParams,
       srcAmount,
@@ -356,24 +356,24 @@ export class UniswapV2
     );
   }
 
-  async getBuyPricePath(
+  getBuyPricePath(
     amount: bigint,
     params: UniswapV2PoolOrderedParams[],
-  ): Promise<bigint> {
+  ): bigint {
     let price = amount;
     for (const param of params.reverse()) {
-      price = await this.getBuyPrice(param, price);
+      price = this.getBuyPrice(param, price);
     }
     return price;
   }
 
-  async getSellPricePath(
+  getSellPricePath(
     amount: bigint,
     params: UniswapV2PoolOrderedParams[],
-  ): Promise<bigint> {
+  ): bigint {
     let price = amount;
     for (const param of params) {
-      price = await this.getSellPrice(param, price);
+      price = this.getSellPrice(param, price);
     }
     return price;
   }
@@ -604,19 +604,15 @@ export class UniswapV2
       );
 
       const unit = isSell
-        ? await this.getSellPricePath(unitVolumeWithFee, [pairParam])
-        : await this.getBuyPricePath(unitVolumeWithFee, [pairParam]);
+        ? this.getSellPricePath(unitVolumeWithFee, [pairParam])
+        : this.getBuyPricePath(unitVolumeWithFee, [pairParam]);
 
       const prices = isSell
-        ? await Promise.all(
-            amountsWithFee.map(amount =>
-              this.getSellPricePath(amount, [pairParam]),
-            ),
+        ? amountsWithFee.map(amount =>
+            this.getSellPricePath(amount, [pairParam]),
           )
-        : await Promise.all(
-            amountsWithFee.map(amount =>
-              this.getBuyPricePath(amount, [pairParam]),
-            ),
+        : amountsWithFee.map(amount =>
+            this.getBuyPricePath(amount, [pairParam]),
           );
 
       const [unitOutWithFee, ...outputsWithFee] = applyTransferFee(

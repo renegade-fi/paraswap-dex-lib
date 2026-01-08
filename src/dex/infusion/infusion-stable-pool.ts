@@ -61,11 +61,11 @@ function _closeTo(a: bigint, b: bigint, target: bigint) {
 }
 
 export class InfusionStablePool {
-  static async getSellPrice(
+  static getSellPrice(
     priceParams: InfusionPoolOrderedParams,
     srcAmount: bigint,
     feeFactor: number,
-  ): Promise<bigint> {
+  ): bigint {
     const { reservesIn, reservesOut, decimalsIn, decimalsOut, fee } =
       priceParams;
 

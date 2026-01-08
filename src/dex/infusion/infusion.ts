@@ -250,10 +250,10 @@ export class Infusion extends UniswapV2 {
     }
   }
 
-  async getSellPrice(
+  getSellPrice(
     priceParams: InfusionPoolOrderedParams,
     srcAmount: bigint,
-  ): Promise<bigint> {
+  ): bigint {
     return priceParams.stable
       ? InfusionStablePool.getSellPrice(priceParams, srcAmount, this.feeFactor)
       : Uniswapv2ConstantProductPool.getSellPrice(
