@@ -36,15 +36,10 @@ import {
 } from './types';
 import { SolidlyConfig, Adapters } from './config';
 import { applyTransferFee } from '../../lib/token-transfer-fee';
-import {
-  hexDataLength,
-  hexZeroPad,
-  hexlify,
-  id,
-  solidityPack,
-} from 'ethers/lib/utils';
+import { hexZeroPad, hexlify, solidityPack } from 'ethers/lib/utils';
 import { BigNumber } from 'ethers';
-import { Flag, SpecialDex } from '../../executor/types';
+import { SpecialDex } from '../../executor/types';
+import { addressDecode } from '../../lib/decoders';
 
 const erc20Iface = new Interface(erc20ABI);
 const solidlyPairIface = new Interface(solidlyPair);
@@ -145,46 +140,66 @@ export class Solidly extends UniswapV2 {
     this.feeFactor = SolidlyConfig[dexKey][network].feeFactor || this.feeFactor;
   }
 
-  async findSolidlyPair(from: Token, to: Token, stable: boolean) {
-    if (from.address.toLowerCase() === to.address.toLowerCase()) return null;
+  async findSolidlyPairs(from: Token, to: Token): Promise<SolidlyPair[]> {
     const [token0, token1] =
       from.address.toLowerCase() < to.address.toLowerCase()
         ? [from, to]
         : [to, from];
 
-    const typePostfix = this.poolPostfix(stable);
-    const key = `${token0.address.toLowerCase()}-${token1.address.toLowerCase()}-${typePostfix}`;
-    let pair = this.pairs[key];
-    if (pair) return pair;
+    const pairKeyBase = `${token0.address.toLowerCase()}-${token1.address.toLowerCase()}`;
+    const stableValues = [true, false];
+    const pairKeys = stableValues.map(
+      stable => `${pairKeyBase}-${this.poolPostfix(stable)}`,
+    );
 
-    let exchange = await this.factory.methods
-      // Solidly has additional boolean parameter "StablePool"
-      // At first we look for uniswap-like volatile pool
-      .getPair(token0.address, token1.address, stable)
-      .call();
+    // get cached pairs
+    const pairs = pairKeys.map(key => this.pairs[key]);
 
-    if (exchange === NULL_ADDRESS) {
-      pair = { token0, token1, stable };
-    } else {
-      pair = { token0, token1, exchange, stable };
-    }
-    this.pairs[key] = pair;
-    return pair;
+    if (pairs.every(Boolean)) return pairs;
+
+    const calldata = stableValues.map(stable => {
+      return {
+        target: this.factoryAddress,
+        callData: this.factory.methods
+          .getPair(token0.address, token1.address, stable)
+          .encodeABI(),
+      };
+    });
+
+    const data: { returnData: any[] } =
+      await this.dexHelper.multiContract.methods.aggregate(calldata).call({});
+
+    const exchanges = data.returnData.map(addressDecode);
+
+    // cache and return
+    stableValues.forEach((stable, i) => {
+      const exchange = exchanges[i];
+
+      if (exchange === NULL_ADDRESS) {
+        pairs[i] = { token0, token1, stable };
+      } else {
+        pairs[i] = { token0, token1, exchange, stable };
+      }
+
+      this.pairs[pairKeys[i]] = pairs[i];
+    });
+
+    return pairs;
   }
 
   async batchCatchUpPairs(pairs: [Token, Token][], blockNumber: number) {
     if (!blockNumber) return;
     const pairsToFetch: SolidlyPair[] = [];
     for (const _pair of pairs) {
-      for (const stable of [false, true]) {
-        const pair = await this.findSolidlyPair(_pair[0], _pair[1], stable);
-        if (!(pair && pair.exchange)) continue;
+      const foundPairs = await this.findSolidlyPairs(_pair[0], _pair[1]);
+      foundPairs.forEach(pair => {
+        if (!(pair && pair.exchange)) return;
         if (!pair.pool) {
           pairsToFetch.push(pair);
         } else if (!pair.pool.getState(blockNumber)) {
           pairsToFetch.push(pair);
         }
-      }
+      });
     }
 
     if (!pairsToFetch.length) return;
@@ -326,7 +341,14 @@ export class Solidly extends UniswapV2 {
 
       await this.batchCatchUpPairs([[from, to]], blockNumber);
 
-      const resultPromises = [false, true].map(async stable => {
+      const pairsParams = await this.getSolidlyPairOrderedParams(
+        from,
+        to,
+        blockNumber,
+        transferFees.srcDexFee,
+      );
+
+      const resultPromises = [true, false].map(async (stable, i) => {
         // We don't support fee on transfer for stable pools yet
         if (
           stable &&
@@ -342,13 +364,7 @@ export class Solidly extends UniswapV2 {
           return null;
 
         const isSell = side === SwapSide.SELL;
-        const pairParam = await this.getSolidlyPairOrderedParams(
-          from,
-          to,
-          blockNumber,
-          stable,
-          transferFees.srcDexFee,
-        );
+        const pairParam = pairsParams[i];
 
         if (!pairParam) return null;
 
@@ -536,56 +552,57 @@ export class Solidly extends UniswapV2 {
     );
   }
 
-  // Same as at uniswap-v2-pool.json, but extended with decimals and stable
   async getSolidlyPairOrderedParams(
     from: Token,
     to: Token,
     blockNumber: number,
-    stable: boolean,
     tokenDexTransferFee: number,
-  ): Promise<SolidlyPoolOrderedParams | null> {
-    const pair = await this.findSolidlyPair(from, to, stable);
-    if (!(pair && pair.pool && pair.exchange)) return null;
-    const pairState = pair.pool.getState(blockNumber);
+  ): Promise<Array<SolidlyPoolOrderedParams | null>> {
+    const pairs = await this.findSolidlyPairs(from, to);
 
-    if (!pairState) {
-      this.logger.error(
-        `Error_orderPairParams expected reserves, got none (maybe the pool doesn't exist) ${
-          from.symbol || from.address
-        } ${to.symbol || to.address}`,
-      );
-      return null;
-    }
+    return pairs.map(pair => {
+      if (!(pair && pair.pool && pair.exchange)) return null;
+      const pairState = pair.pool.getState(blockNumber);
 
-    const fee = (pairState.feeCode + tokenDexTransferFee).toString();
-    const pairReversed =
-      pair.token1.address.toLowerCase() === from.address.toLowerCase();
-    if (pairReversed) {
+      if (!pairState) {
+        this.logger.error(
+          `Error_orderPairParams expected reserves, got none (maybe the pool doesn't exist) ${
+            from.symbol || from.address
+          } ${to.symbol || to.address}`,
+        );
+        return null;
+      }
+
+      const fee = (pairState.feeCode + tokenDexTransferFee).toString();
+      const pairReversed =
+        pair.token1.address.toLowerCase() === from.address.toLowerCase();
+      if (pairReversed) {
+        return {
+          tokenIn: from.address,
+          tokenOut: to.address,
+          reservesIn: pairState.reserves1,
+          reservesOut: pairState.reserves0,
+          fee,
+          direction: false,
+          exchange: pair.exchange,
+          decimalsIn: from.decimals,
+          decimalsOut: to.decimals,
+          stable: pair.stable,
+        };
+      }
       return {
         tokenIn: from.address,
         tokenOut: to.address,
-        reservesIn: pairState.reserves1,
-        reservesOut: pairState.reserves0,
+        reservesIn: pairState.reserves0,
+        reservesOut: pairState.reserves1,
         fee,
-        direction: false,
+        direction: true,
         exchange: pair.exchange,
         decimalsIn: from.decimals,
         decimalsOut: to.decimals,
-        stable,
+        stable: pair.stable,
       };
-    }
-    return {
-      tokenIn: from.address,
-      tokenOut: to.address,
-      reservesIn: pairState.reserves0,
-      reservesOut: pairState.reserves1,
-      fee,
-      direction: true,
-      exchange: pair.exchange,
-      decimalsIn: from.decimals,
-      decimalsOut: to.decimals,
-      stable,
-    };
+    });
   }
 
   async getPoolIdentifiers(
