@@ -32,6 +32,7 @@ import {
 } from './types';
 import { IDex } from '../idex';
 import {
+  CACHE_PREFIX,
   DEST_TOKEN_PARASWAP_TRANSFERS,
   ETHER_ADDRESS,
   Network,
@@ -59,10 +60,11 @@ import { UniswapV2Config, Adapters } from './config';
 import { Uniswapv2ConstantProductPool } from './uniswap-v2-constant-product-pool';
 import { applyTransferFee } from '../../lib/token-transfer-fee';
 import _rebaseTokens from '../../rebase-tokens.json';
-import { Flag, SpecialDex } from '../../executor/types';
+import { SpecialDex } from '../../executor/types';
 import { hexZeroPad, hexlify, solidityPack, hexConcat } from 'ethers/lib/utils';
 import { BigNumber } from 'ethers';
 import { OnPoolCreatedCallback, UniswapV2Factory } from './uniswap-v2-factory';
+import { UNISWAP_V2_RECHECK_PAIR_EXISTENCE_AFTER_MS } from './constants';
 
 const rebaseTokens = _rebaseTokens as { chainId: number; address: string }[];
 
@@ -116,6 +118,7 @@ export interface UniswapV2Pair {
   token1: Token;
   exchange?: Address;
   pool?: UniswapV2EventPool;
+  checkExistenceAfter?: number;
 }
 
 export class UniswapV2EventPool extends StatefulEventSubscriber<UniswapV2PoolState> {
@@ -219,6 +222,7 @@ export class UniswapV2
   pairs: { [key: string]: UniswapV2Pair } = {};
   feeFactor = 10000;
   factory: Contract;
+  pairsHashCacheKey: string;
 
   routerInterface: Interface;
   exchangeRouterInterface: Interface;
@@ -280,6 +284,8 @@ export class UniswapV2
 
     this.routerInterface = new Interface(ParaSwapABI);
     this.exchangeRouterInterface = new Interface(UniswapV2ExchangeRouterABI);
+    this.pairsHashCacheKey =
+      `${CACHE_PREFIX}_${network}_${dexKey}_pairs`.toLowerCase();
 
     this.factoryInst = new UniswapV2Factory(
       dexHelper,
@@ -388,9 +394,30 @@ export class UniswapV2
     const key = this.getPoolIdentifier(token0.address, token1.address);
     let pair = this.pairs[key];
     if (pair) return pair;
+
+    const cachedPairRaw = await this.dexHelper.cache.hget(
+      this.pairsHashCacheKey,
+      key,
+    );
+
+    const cachedPair = cachedPairRaw
+      ? (JSON.parse(cachedPairRaw) as UniswapV2Pair)
+      : null;
+
+    if (
+      cachedPair &&
+      (cachedPair.exchange ||
+        (cachedPair.checkExistenceAfter &&
+          cachedPair.checkExistenceAfter > Date.now()))
+    ) {
+      this.pairs[key] = cachedPair;
+      return cachedPair;
+    }
+
     const exchange = await this.factory.methods
       .getPair(token0.address, token1.address)
       .call();
+
     if (exchange === NULL_ADDRESS) {
       // if the pool has been newly created to not allow this op as we can run into race condition between pool discovery and concurrent pricing request touching this pool
       if (!this.newlyCreatedPoolKeys.has(key)) {
@@ -399,6 +426,17 @@ export class UniswapV2
     } else {
       pair = { token0, token1, exchange };
     }
+
+    await this.dexHelper.cache.hset(
+      this.pairsHashCacheKey,
+      key,
+      JSON.stringify({
+        ...pair,
+        checkExistenceAfter:
+          Date.now() + UNISWAP_V2_RECHECK_PAIR_EXISTENCE_AFTER_MS,
+      }),
+    );
+
     this.pairs[key] = pair;
     return pair;
   }
@@ -1097,6 +1135,8 @@ export class UniswapV2
 
         // delete entry locally to let local instance discover the pool
         delete this.pairs[poolKey];
+
+        await this.dexHelper.cache.hdel(this.pairsHashCacheKey, [poolKey]);
 
         this.logger.info(`${logPrefix} discovered new pool ${poolKey}`);
       } catch (e) {
