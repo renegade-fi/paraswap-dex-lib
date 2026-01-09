@@ -52,6 +52,3 @@ export const UniswapV2Alias: { [network: number]: string } = {
   [Network.GNOSIS]: 'sushiswap', // no direct UniswapV2 integration on Gnosis
   [Network.UNICHAIN]: 'uniswapv2',
 };
-
-export const UNISWAP_V2_RECHECK_PAIR_EXISTENCE_AFTER_MS =
-  3 * 24 * 60 * 60 * 1000; // 3 days
