@@ -427,15 +427,17 @@ export class UniswapV2
       pair = { token0, token1, exchange };
     }
 
-    await this.dexHelper.cache.hset(
-      this.pairsHashCacheKey,
-      key,
-      JSON.stringify({
-        ...pair,
-        checkExistenceAfter:
-          Date.now() + UNISWAP_V2_RECHECK_PAIR_EXISTENCE_AFTER_MS,
-      }),
-    );
+    if (pair) {
+      await this.dexHelper.cache.hset(
+        this.pairsHashCacheKey,
+        key,
+        JSON.stringify({
+          ...pair,
+          checkExistenceAfter:
+            Date.now() + UNISWAP_V2_RECHECK_PAIR_EXISTENCE_AFTER_MS,
+        }),
+      );
+    }
 
     this.pairs[key] = pair;
     return pair;
