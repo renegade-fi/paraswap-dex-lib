@@ -38,6 +38,8 @@ import { applyTransferFee } from '../../lib/token-transfer-fee';
 import { isStablePair } from './utils/isStablePair';
 import { addressDecode } from '../../lib/decoders';
 
+const INFUSION_RECHECK_PAIR_EXISTENCE_AFTER_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+
 export enum InfusionRouterFunctions {
   sellExactEth = 'swapExactETHForTokens',
   sellExactToken = 'swapExactTokensForETH',
@@ -142,6 +144,37 @@ export class Infusion extends UniswapV2 {
 
     if (pairs.every(Boolean)) return pairs;
 
+    const cachedPairsRaw = await this.dexHelper.cache.hmget(
+      this.pairsHashCacheKey,
+      pairKeys,
+    );
+
+    const cachedPairs = cachedPairsRaw.map(p =>
+      p ? (JSON.parse(p) as InfusionPair) : null,
+    );
+
+    const shouldFetchFromRpc = cachedPairs.some(
+      (cachedPair, i): cachedPair is InfusionPair => {
+        if (
+          cachedPair &&
+          (cachedPair.exchange ||
+            (cachedPair.checkExistenceAfter &&
+              cachedPair.checkExistenceAfter > Date.now()))
+        ) {
+          // prevent wiping initialized pool
+          if (!pairs[i]?.pool) {
+            pairs[i] = cachedPair;
+            this.pairs[pairKeys[i]] = cachedPair;
+          }
+          return false;
+        }
+
+        return true;
+      },
+    );
+
+    if (!shouldFetchFromRpc) return pairs;
+
     const calldata = stableValues.map(stable => {
       return {
         target: this.factoryAddress,
@@ -158,16 +191,38 @@ export class Infusion extends UniswapV2 {
 
     // cache and return
     stableValues.forEach((stable, i) => {
+      // prevent wiping initialized pool
+      if (pairs[i]?.pool) {
+        return;
+      }
+
       const exchange = exchanges[i];
 
       if (exchange === NULL_ADDRESS) {
-        pairs[i] = { token0, token1, stable };
+        pairs[i] = {
+          token0,
+          token1,
+          stable,
+          checkExistenceAfter:
+            Date.now() + INFUSION_RECHECK_PAIR_EXISTENCE_AFTER_MS,
+        };
       } else {
-        pairs[i] = { token0, token1, exchange, stable };
+        pairs[i] = { token0, token1, stable, exchange };
       }
 
       this.pairs[pairKeys[i]] = pairs[i];
     });
+
+    const pairsToCache = pairKeys
+      .map<[string, InfusionPair]>((key, i) => [key, pairs[i]])
+      .filter(([_, pair]) => !pair.pool);
+
+    await this.dexHelper.cache.hmset(
+      this.pairsHashCacheKey,
+      Object.fromEntries(
+        pairsToCache.map(([key, pair]) => [key, JSON.stringify(pair)]),
+      ),
+    );
 
     return pairs;
   }
