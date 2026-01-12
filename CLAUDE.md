@@ -11,6 +11,8 @@ When making fixes based on code review comments or feedback, add a concise descr
 <!-- Add new fixes at the top of this list -->
 <!-- Format: - **[Date] Issue**: Brief description of fix -->
 
+- **[2025-01] Remove unused ABIs when removing DEXes**: When removing DEX integrations, also remove their associated ABI files from `src/abi/` if no longer referenced. Use `grep` to verify ABIs are not imported elsewhere before deletion.
+
 - **[2025-01] Reuse Interface instances**: Move `factoryIface = new Interface(...)` to class property instead of creating in method. Avoids repeated instantiation on each call.
 
 - **[2025-01] PharaohV3 fee updates fix**: Extracted `buildFeeCallData()` method from `updateAllPoolFees()` so PharaohV3 can override it. PharaohV3 uses `pool.fee()` on pool contract, not `factory.getSwapFee()`.
