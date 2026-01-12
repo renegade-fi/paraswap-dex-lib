@@ -57,7 +57,6 @@ import { WstETH } from './wsteth/wsteth';
 import { ERC4626 } from './erc4626/erc4626';
 import { Camelot } from './camelot/camelot';
 import { Hashflow } from './hashflow/hashflow';
-import { Infusion } from './infusion/infusion';
 import { SolidlyEthereum } from './solidly/solidly-ethereum';
 import { MaverickV1 } from './maverick-v1/maverick-v1';
 import { MaverickV2 } from './maverick-v2/maverick-v2';
@@ -185,7 +184,6 @@ const Dexes = [
   ERC4626,
   Hashflow,
   Native,
-  Infusion,
   MaverickV1,
   MaverickV2,
   Camelot,
