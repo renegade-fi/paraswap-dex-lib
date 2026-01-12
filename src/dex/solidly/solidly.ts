@@ -151,10 +151,9 @@ export class Solidly extends UniswapV2 {
         ? [from, to]
         : [to, from];
 
-    const pairKeyBase = `${token0.address.toLowerCase()}-${token1.address.toLowerCase()}`;
     const stableValues = [false, true];
-    const pairKeys = stableValues.map(
-      stable => `${pairKeyBase}-${this.poolPostfix(stable)}`,
+    const pairKeys = stableValues.map(stable =>
+      this.getPoolIdentifier(token0.address, token1.address, stable),
     );
 
     // get cached pairs
@@ -669,14 +668,24 @@ export class Solidly extends UniswapV2 {
       return [];
     }
 
-    const tokenAddress = [from.address.toLowerCase(), to.address.toLowerCase()]
+    return [
+      this.getPoolIdentifier(from.address, to.address, false),
+      this.getPoolIdentifier(from.address, to.address, true),
+    ];
+  }
+
+  protected getPoolIdentifier(
+    token0: string,
+    token1: string,
+    stable: boolean = false,
+  ): string {
+    const tokenAddress = [token0.toLowerCase(), token1.toLowerCase()]
       .sort((a, b) => (a > b ? 1 : -1))
       .join('_');
 
     const poolIdentifier = `${this.dexKey}_${tokenAddress}`;
-    const poolIdentifierUniswap = poolIdentifier + this.poolPostfix(false);
-    const poolIdentifierStable = poolIdentifier + this.poolPostfix(true);
-    return [poolIdentifierUniswap, poolIdentifierStable];
+
+    return poolIdentifier + this.poolPostfix(stable);
   }
 
   poolPostfix(stable: boolean) {
