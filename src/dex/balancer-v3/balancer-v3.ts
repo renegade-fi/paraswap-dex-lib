@@ -224,6 +224,7 @@ export class BalancerV3 extends SimpleExchange implements IDex<BalancerV3Data> {
       if (activeChainHead && blockNumber === latestBlockNumber) {
         blockTimestamp = Number(activeChainHead.timestamp);
       } else {
+        // Timestamp diff between current time and block.timestamp is acceptable for pricing in this case
         blockTimestamp = Math.floor(Date.now() / 1000);
       }
 
