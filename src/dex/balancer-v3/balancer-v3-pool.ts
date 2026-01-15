@@ -605,7 +605,7 @@ export class BalancerV3EventPool extends StatefulEventSubscriber<PoolStateMap> {
    * Retrieves any new pools via API/multicall and adds to state
    */
   async updateStatePools(): Promise<void> {
-    const blockNumber = this.dexHelper.blockManager.getLatestBlockNumber();
+    const blockNumber = await this.dexHelper.provider.getBlockNumber();
     const updatedPoolState = await this.getUpdatedPoolState(blockNumber);
     if (updatedPoolState) this.setState(updatedPoolState, blockNumber);
   }
