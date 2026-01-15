@@ -215,7 +215,7 @@ export class BalancerV3 extends SimpleExchange implements IDex<BalancerV3Data> {
       }
 
       // This is needed to calculate Amp if it is updating
-      let blockTimestamp: number | undefined;
+      let blockTimestamp: number;
 
       const latestBlockNumber =
         this.dexHelper.blockManager.getLatestBlockNumber();
@@ -224,7 +224,18 @@ export class BalancerV3 extends SimpleExchange implements IDex<BalancerV3Data> {
       if (activeChainHead && blockNumber === latestBlockNumber) {
         blockTimestamp = Number(activeChainHead.timestamp);
       } else {
-        blockTimestamp = Math.floor(Date.now() / 1000);
+        // Fetch actual block timestamp for accurate Amp calculations
+        // when not at chain head (e.g., pricing for past blocks)
+        try {
+          const block = await this.dexHelper.provider.getBlock(blockNumber);
+          blockTimestamp = block.timestamp;
+        } catch (e) {
+          this.logger.warn(
+            `Failed to fetch block ${blockNumber} timestamp, using current time`,
+            e,
+          );
+          blockTimestamp = Math.floor(Date.now() / 1000);
+        }
       }
 
       // get up to date pools and state
