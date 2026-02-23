@@ -1,5 +1,5 @@
 import { Result } from '@ethersproject/abi';
-import { BasicQuoteData, EkuboContracts } from './types';
+import { BasicQuoteData, BoostedFeesQuoteData, EkuboContracts } from './types';
 import { DeepReadonly } from 'ts-essentials';
 import { BlockHeader } from 'web3-eth';
 import { Log, Logger, Token } from '../../types';
@@ -695,32 +695,89 @@ export class EkuboV3PoolManager implements EventSubscriber {
       }),
     );
 
-    promises.push(
-      ...boostedFeesPoolKeys.map(async ({ key, initBlockNumber }) => {
-        try {
-          const [quoteData, boostedFeesData] = await Promise.all([
-            this.contracts.core.quoteDataFetcher.getQuoteData(
-              [key.toAbi()],
-              MIN_BITMAPS_SEARCHED,
-              { blockTag: blockNumber },
-            ) as Promise<BasicQuoteData[]>,
-            this.contracts.boostedFees.quoteDataFetcher.getPoolState(
-              key.toAbi(),
-              { blockTag: blockNumber },
-            ),
-          ]);
+    const boostedFeesDataFetcher = this.contracts.boostedFees.quoteDataFetcher;
+    const coreQuoteDataFetcher = this.contracts.core.quoteDataFetcher;
 
-          await addPool(
-            BoostedFeesPool,
-            BoostedFeesPoolState.fromQuoter(quoteData[0], boostedFeesData),
-            initBlockNumber,
-            key,
-          );
-        } catch (err) {
-          this.logger.error(`Failed to construct pool ${key.stringId}: ${err}`);
-        }
-      }),
-    );
+    for (
+      let batchStart = 0;
+      batchStart < boostedFeesPoolKeys.length;
+      batchStart += MAX_BATCH_SIZE
+    ) {
+      const batch = boostedFeesPoolKeys.slice(
+        batchStart,
+        batchStart + MAX_BATCH_SIZE,
+      );
+
+      promises.push(
+        this.dexHelper.multiWrapper
+          .tryAggregate<BasicQuoteData[] | BoostedFeesQuoteData>(
+            false,
+            [
+              {
+                target: coreQuoteDataFetcher.address,
+                callData: coreQuoteDataFetcher.interface.encodeFunctionData(
+                  'getQuoteData',
+                  [batch.map(({ key }) => key.toAbi()), MIN_BITMAPS_SEARCHED],
+                ),
+                decodeFunction: (result: any): BasicQuoteData[] =>
+                  coreQuoteDataFetcher.interface.decodeFunctionResult(
+                    'getQuoteData',
+                    result,
+                  ).results,
+              },
+              ...batch.map(({ key }) => ({
+                target: boostedFeesDataFetcher.address,
+                callData: boostedFeesDataFetcher.interface.encodeFunctionData(
+                  'getPoolState',
+                  [key.toAbi()],
+                ),
+                decodeFunction: (result: any): BoostedFeesQuoteData =>
+                  boostedFeesDataFetcher.interface.decodeFunctionResult(
+                    'getPoolState',
+                    result,
+                  ).state,
+              })),
+            ],
+            blockNumber,
+          )
+          .then(async results => {
+            const quoteDataResult = results[0];
+            if (!quoteDataResult.success) {
+              this.logger.error(
+                `Failed to fetch quote data for boosted fees batch. Pool keys: ${batch.map(
+                  ({ key }) => key.stringId,
+                )}`,
+              );
+              return;
+            }
+
+            const quoteDataBatch =
+              quoteDataResult.returnData as BasicQuoteData[];
+
+            await Promise.all(
+              batch.map(async ({ key, initBlockNumber }, i) => {
+                const boostedFeesResult = results[i + 1];
+                if (!boostedFeesResult.success) {
+                  this.logger.error(
+                    `Failed to fetch boosted fees data for pool ${key.stringId}`,
+                  );
+                  return;
+                }
+
+                await addPool(
+                  BoostedFeesPool,
+                  BoostedFeesPoolState.fromQuoter(
+                    quoteDataBatch[i],
+                    boostedFeesResult.returnData as BoostedFeesQuoteData,
+                  ),
+                  initBlockNumber,
+                  key,
+                );
+              }),
+            );
+          }),
+      );
+    }
 
     await Promise.all(promises);
   }
