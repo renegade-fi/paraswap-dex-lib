@@ -22,4 +22,14 @@ export const AlgebraIntegralConfig: DexConfigMap<DexParams> = {
       chunksCount: 10,
     },
   },
+  Supernova: {
+    [Network.MAINNET]: {
+      factory: '0x44B7fBd4D87149eFa5347c451E74B9FD18E89c55',
+      subgraphURL:
+        'https://api.goldsky.com/api/public/project_cm8gyxv0x02qv01uphvy69ey6/subgraphs/core/algebrasnmainnet/gn',
+      quoter: '0x8217550d36823b1194b58562dac55d7fe8efb727',
+      router: '0x72d63a5b080e1b89cc93f9b9f50cbfa5e291c8ac',
+      chunksCount: 10,
+    },
+  },
 };

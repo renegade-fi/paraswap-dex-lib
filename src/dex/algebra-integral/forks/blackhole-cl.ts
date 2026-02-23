@@ -25,7 +25,9 @@ export class BlackholeCL extends AlgebraIntegral {
   }
 
   public static dexKeysWithNetwork: { key: string; networks: Network[] }[] =
-    getDexKeysWithNetwork(_.pick(AlgebraIntegralConfig, ['BlackholeCL']));
+    getDexKeysWithNetwork(
+      _.pick(AlgebraIntegralConfig, ['BlackholeCL', 'Supernova']),
+    );
 
   getMultiCallData(
     from: string,
