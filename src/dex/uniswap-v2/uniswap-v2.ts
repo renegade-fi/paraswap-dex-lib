@@ -142,10 +142,7 @@ export class UniswapV2EventPool extends StatefulEventSubscriber<UniswapV2PoolSta
   ) {
     super(
       parentName,
-      (token0.symbol || token0.address) +
-        '-' +
-        (token1.symbol || token1.address) +
-        ' pool',
+      `${token0.address}_${token1.address}_${poolAddress}`,
       dexHelper,
       logger,
     );
