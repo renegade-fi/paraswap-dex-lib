@@ -30,7 +30,7 @@
       {
         "name": "state",
         "type": "tuple",
-        "internalType": "struct PoolState",
+        "internalType": "struct BoostedPoolState",
         "components": [
           {
             "name": "sqrtRatio",
@@ -48,24 +48,24 @@
             "internalType": "uint128"
           },
           {
-            "name": "lastVirtualOrderExecutionTime",
+            "name": "lastDonateTime",
             "type": "uint64",
             "internalType": "uint64"
           },
           {
-            "name": "saleRateToken0",
+            "name": "donateRateToken0",
             "type": "uint112",
             "internalType": "uint112"
           },
           {
-            "name": "saleRateToken1",
+            "name": "donateRateToken1",
             "type": "uint112",
             "internalType": "uint112"
           },
           {
-            "name": "saleRateDeltas",
+            "name": "donateRateDeltas",
             "type": "tuple[]",
-            "internalType": "struct TimeSaleRateInfo[]",
+            "internalType": "struct BoostedTimeDonateRateInfo[]",
             "components": [
               {
                 "name": "time",
@@ -73,14 +73,14 @@
                 "internalType": "uint64"
               },
               {
-                "name": "saleRateDelta0",
-                "type": "int112",
-                "internalType": "int112"
+                "name": "donateRateDelta0",
+                "type": "int128",
+                "internalType": "int128"
               },
               {
-                "name": "saleRateDelta1",
-                "type": "int112",
-                "internalType": "int112"
+                "name": "donateRateDelta1",
+                "type": "int128",
+                "internalType": "int128"
               }
             ]
           }
