@@ -388,7 +388,7 @@ export class Renegade
         { deadline },
       ];
     } catch (e: any) {
-      if (!e?.isSlippageError && !e?.isBlacklistError && !e?.isNoMatchError) {
+      if (this.isPairRejection(e)) {
         this.logger.warn(
           `${this.dexKey}-${this.network}: protocol is restricted for pair ${srcToken.address} -> ${destToken.address}`,
         );
@@ -429,6 +429,16 @@ export class Renegade
       );
       throw new BlacklistError(this.dexKey, this.network, options.userAddress);
     }
+  }
+
+  // Returns true only for errors that indicate the pair itself is invalid
+  // (4xx responses). Transient failures (timeouts, 5xx) must not restrict pairs.
+  private isPairRejection(e: any): boolean {
+    if (e?.isSlippageError || e?.isBlacklistError || e?.isNoMatchError) {
+      return false;
+    }
+    const status = e?.response?.status;
+    return status >= 400 && status < 500;
   }
 
   private assertPairSupported(srcToken: Address, destToken: Address): void {
