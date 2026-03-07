@@ -395,9 +395,8 @@ export class Renegade
         await this.restrictPair(srcToken.address, destToken.address);
       }
 
-      const message = `${this.dexKey}-${this.network}: ${e}`;
-      this.logger.error(message);
-      throw new Error(message);
+      this.logger.error(`${this.dexKey}-${this.network}: ${e}`);
+      throw e;
     }
   }
 
