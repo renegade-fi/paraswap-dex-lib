@@ -1,17 +1,43 @@
-// Type definitions for Renegade DEX integration
-
+import BigNumber from 'bignumber.js';
 import { SponsoredMatchResponse } from './api/types';
 
-// Price level format from Renegade API
 export type RenegadePriceLevel = [price: string, size: string];
 
-// Pair data structure from Renegade API
 export type RenegadeDepth = {
   bids: RenegadePriceLevel[];
   asks: RenegadePriceLevel[];
 };
 
-// Configuration for RateFetcher
+export type RenegadeMarketInfo = {
+  base: {
+    address: string;
+    symbol: string;
+  };
+  quote: {
+    address: string;
+    symbol: string;
+  };
+  price: {
+    price: string;
+    timestamp: number;
+  };
+};
+
+export type RenegadeMarketDepth = {
+  market: RenegadeMarketInfo;
+  buy: RenegadeMarketSideDepth;
+  sell: RenegadeMarketSideDepth;
+};
+
+export type RenegadeMarketDepthsResponse = {
+  market_depths: RenegadeMarketDepth[];
+};
+
+export type RenegadeMarketSideDepth = {
+  total_quantity: string;
+  total_quantity_usd: string;
+};
+
 export type RenegadeRateFetcherConfig = {
   apiKey: string;
   apiSecret: string;
@@ -21,7 +47,6 @@ export type RenegadeRateFetcherConfig = {
   tokenMetadataCacheTTL: number;
 };
 
-// Token metadata
 type RenegadeTokenInfo = {
   name: string;
   ticker: string;
@@ -31,25 +56,27 @@ type RenegadeTokenInfo = {
   canonical_exchange: string;
 };
 
-// Token remap from Renegade API
 export type RenegadeTokenRemap = {
   tokens: RenegadeTokenInfo[];
 };
 
-// Data structure for DEX methods
 export type RenegadeData = {
   settlementTx?: RenegadeTx;
   rawResponse?: SponsoredMatchResponse;
 };
 
-// Configuration parameters for Renegade DEX per network
 export type DexParams = {
   usdcAddress: string;
 };
 
-// Renegade transaction data
 export type RenegadeTx = {
   to: string;
   data: string;
   value: string;
+};
+
+export type RenegadeMidpointDepth = {
+  price: BigNumber;
+  buyBaseCapacity: BigNumber;
+  sellBaseCapacity: BigNumber;
 };

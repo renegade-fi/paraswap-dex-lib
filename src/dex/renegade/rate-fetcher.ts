@@ -1,3 +1,4 @@
+import BigNumber from 'bignumber.js';
 import { Network } from '../../constants';
 import { IDexHelper } from '../../dex-helper';
 import { RequestConfig } from '../../dex-helper/irequest-wrapper';
@@ -6,7 +7,7 @@ import { Logger, Token } from '../../types';
 import { generateRenegadeAuthHeaders } from './api/auth';
 import {
   buildRenegadeApiUrl,
-  RENEGADE_LEVELS_ENDPOINT,
+  RENEGADE_MARKETS_DEPTH_ENDPOINT,
   RENEGADE_LEVELS_POLLING_INTERVAL,
   RENEGADE_TOKEN_MAPPINGS_BASE_URL,
   RENEGADE_TOKEN_METADATA_POLLING_INTERVAL,
@@ -14,13 +15,12 @@ import {
 import { RenegadeLevelsResponse } from './renegade-levels-response';
 import {
   RenegadeDepth,
+  RenegadeMarketSideDepth,
+  RenegadeMarketDepthsResponse,
   RenegadeRateFetcherConfig,
   RenegadeTokenRemap,
 } from './types';
 
-// RateFetcher for Renegade DEX integration using the Fetcher class.
-// This implementation uses the standard Fetcher class with HMAC-SHA256 authentication
-// and includes polling functionality for real-time price level updates.
 export class RateFetcher {
   private levelsFetcher: Fetcher<RenegadeLevelsResponse>;
   private levelsCacheKey: string;
@@ -41,23 +41,14 @@ export class RateFetcher {
     this.levelsCacheTTL = config.levelsCacheTTL;
     this.tokenMetadataCacheKey = config.tokenMetadataCacheKey;
     this.tokenMetadataCacheTTL = config.tokenMetadataCacheTTL;
-    // Build network-specific API URL
     const baseUrl = buildRenegadeApiUrl(this.network);
-    const url = `${baseUrl}${RENEGADE_LEVELS_ENDPOINT}`;
+    const url = `${baseUrl}${RENEGADE_MARKETS_DEPTH_ENDPOINT}`;
 
-    // Create authentication function for Renegade API
     const authenticate = (options: RequestConfig): RequestConfig => {
-      // Convert headers to string format for auth function
-      const stringHeaders: Record<string, string> = {};
-      for (const [key, value] of Object.entries(options.headers ?? {})) {
-        stringHeaders[key] = String(value);
-      }
-
-      // Generate authenticated headers using HMAC-SHA256
       const authenticatedHeaders = generateRenegadeAuthHeaders(
-        RENEGADE_LEVELS_ENDPOINT,
-        options.data ? JSON.stringify(options.data) : '', // Convert body to string
-        stringHeaders,
+        RENEGADE_MARKETS_DEPTH_ENDPOINT,
+        options.data ? JSON.stringify(options.data) : '',
+        this.stringifyHeaders(options.headers),
         this.config.apiKey,
         this.config.apiSecret,
       );
@@ -67,31 +58,28 @@ export class RateFetcher {
       return options;
     };
 
-    // Create caster function to validate and transform response
     const caster = (data: unknown): RenegadeLevelsResponse => {
       if (typeof data !== 'object' || data === null) {
         throw new Error('Invalid response format from Renegade API');
       }
 
-      const response = data as { [pairIdentifier: string]: RenegadeDepth };
-
-      return new RenegadeLevelsResponse(response);
+      const response = data as RenegadeMarketDepthsResponse;
+      return new RenegadeLevelsResponse(this.toPairDepthMap(response));
     };
 
-    // Create request info for the Fetcher
     const requestInfo: RequestInfo<RenegadeLevelsResponse> = {
       requestOptions: {
         url,
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          Accept: 'application/json;number=string',
         },
       },
       caster,
       authenticate,
     };
 
-    // Initialize the Fetcher
     this.levelsFetcher = new Fetcher<RenegadeLevelsResponse>(
       this.dexHelper.httpRequest,
       {
@@ -145,7 +133,6 @@ export class RateFetcher {
   // Handle successful levels response from the Fetcher.
   private handleLevelsResponse(levelsResponse: RenegadeLevelsResponse): void {
     const rawData = levelsResponse.getRawData();
-    this.logger.info(`Renegade levels response: ${JSON.stringify(rawData)}`);
 
     this.dexHelper.cache.setex(
       this.dexKey,
@@ -154,6 +141,88 @@ export class RateFetcher {
       this.levelsCacheTTL,
       JSON.stringify(rawData),
     );
+  }
+
+  private toPairDepthMap(
+    response: RenegadeMarketDepthsResponse,
+  ): Record<string, RenegadeDepth> {
+    const pairDepthMap: Record<string, RenegadeDepth> = {};
+    const marketDepths = Array.isArray(response.market_depths)
+      ? response.market_depths
+      : [];
+
+    for (const marketDepth of marketDepths) {
+      const baseAddress = marketDepth.market?.base?.address?.toLowerCase();
+      const quoteAddress = marketDepth.market?.quote?.address?.toLowerCase();
+      const price = this.parsePositiveDecimal(marketDepth.market?.price?.price);
+
+      if (!baseAddress || !quoteAddress || !price) {
+        continue;
+      }
+
+      const bidBaseSize = this.resolveBaseSize(marketDepth.buy, price);
+      const askBaseSize = this.resolveBaseSize(marketDepth.sell, price);
+
+      const pairIdentifier = `${baseAddress}/${quoteAddress}`;
+      pairDepthMap[pairIdentifier] = {
+        bids: bidBaseSize.gt(0)
+          ? [[price.toFixed(), bidBaseSize.toFixed()]]
+          : [],
+        asks: askBaseSize.gt(0)
+          ? [[price.toFixed(), askBaseSize.toFixed()]]
+          : [],
+      };
+    }
+
+    return pairDepthMap;
+  }
+
+  private parsePositiveDecimal(value: unknown): BigNumber | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    const parsed = new BigNumber(String(value));
+    if (!parsed.isFinite() || parsed.lte(0)) {
+      return null;
+    }
+
+    return parsed;
+  }
+
+  private resolveBaseSize(
+    marketSideDepth: RenegadeMarketSideDepth | undefined,
+    price: BigNumber,
+  ): BigNumber {
+    const quantity = this.parsePositiveDecimal(marketSideDepth?.total_quantity);
+    if (quantity) {
+      return quantity;
+    }
+
+    const quantityUsd = this.parsePositiveDecimal(
+      marketSideDepth?.total_quantity_usd,
+    );
+    if (!quantityUsd) {
+      return new BigNumber(0);
+    }
+
+    const baseSize = quantityUsd.dividedBy(price);
+    if (!baseSize.isFinite() || baseSize.lte(0)) {
+      return new BigNumber(0);
+    }
+
+    return baseSize;
+  }
+
+  private stringifyHeaders(
+    headers: RequestConfig['headers'],
+  ): Record<string, string> {
+    const stringHeaders: Record<string, string> = {};
+    for (const [key, value] of Object.entries(headers ?? {})) {
+      stringHeaders[key] = String(value);
+    }
+
+    return stringHeaders;
   }
 
   // Handle successful token metadata response from the Fetcher.
@@ -181,6 +250,11 @@ export class RateFetcher {
   start(): void {
     this.levelsFetcher.startPolling();
     this.tokenMetadataFetcher.startPolling();
+  }
+
+  async fetchOnce(): Promise<void> {
+    await this.levelsFetcher.fetch(true);
+    await this.tokenMetadataFetcher.fetch(true);
   }
 
   stop(): void {
