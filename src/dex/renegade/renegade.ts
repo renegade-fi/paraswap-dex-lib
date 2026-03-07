@@ -758,6 +758,8 @@ export class Renegade
   }
 
   private _sortTokens(srcAddress: Address, destAddress: Address) {
-    return [srcAddress, destAddress].sort((a, b) => (a < b ? -1 : 1));
+    return [srcAddress, destAddress].sort((a, b) =>
+      a.toLowerCase() < b.toLowerCase() ? -1 : 1,
+    );
   }
 }
